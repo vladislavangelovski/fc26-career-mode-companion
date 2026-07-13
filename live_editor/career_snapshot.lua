@@ -1,11 +1,12 @@
+require 'imports/career_mode/enums'
 require 'imports/other/helpers'
 
--- Run in the Career Mode central hub. This script only reads FC 26 data and
--- overwrites the two snapshot files consumed by FC 26 Career Analyst.
+-- Auto-runs after a Career save loads and refreshes on day changes and before matches.
+-- This script only reads FC 26 data and overwrites the two snapshot files.
 local SCHEMA_VERSION = 1
-local DESKTOP = string.format('%s\\Desktop', os.getenv('USERPROFILE'))
-local SQUAD_FILE = DESKTOP .. '\\fc26_squad_snapshot.csv'
-local TACTICS_FILE = DESKTOP .. '\\fc26_tactics_snapshot.csv'
+local EXPORT_DIR = string.format('%s\\FC26 Career Analyst\\Live Editor', os.getenv('APPDATA'))
+local SQUAD_FILE = EXPORT_DIR .. '\\fc26_squad_snapshot.csv'
+local TACTICS_FILE = EXPORT_DIR .. '\\fc26_tactics_snapshot.csv'
 
 local function number(v) return tonumber(v) or 0 end
 local function value(row, field)
@@ -32,7 +33,7 @@ local function write_csv(path, headers, rows)
     file:close()
 end
 
-assert(IsInCM(), 'Load a Career Mode save before running career_snapshot.lua')
+local function export_snapshot()
 local team_id = GetUserTeamID()
 assert(team_id > 0, 'Managed team ID is invalid')
 local links = index('teamplayerlinks', 'playerid', function(row) return number(value(row, 'teamid')) == team_id end)
@@ -88,16 +89,22 @@ local tactic_headers = {
     'chance_shooting','defensive_pressure','defensive_width','defensive_line'
 }
 local tactic_rows = {}
+local assigned_players = {}
+for player_id, link in pairs(links) do
+    local position = number(value(link, 'position'))
+    if position >= 0 and position < 28 then assigned_players[position] = player_id end
+end
 local formations = GetDBTableRows('customformations') or {}
 if #formations == 0 then formations = GetDBTableRows('formations') or {} end
 for _, formation in ipairs(formations) do
     if number(value(formation, 'teamid')) == team_id then
         for slot = 0, 10 do
+            local position = number(value(formation, 'position' .. slot))
             table.insert(tactic_rows, {
                 SCHEMA_VERSION, csv(captured_at), team_id, number(value(formation, 'formationid')),
-                csv(value(formation, 'formationname')), slot, number(value(formation, 'position' .. slot)),
+                csv(value(formation, 'formationname')), slot, position,
                 number(value(formation, 'offset' .. slot .. 'x')), number(value(formation, 'offset' .. slot .. 'y')),
-                number(value(formation, 'pos' .. slot .. 'role')), csv(''), csv(''),
+                number(value(formation, 'pos' .. slot .. 'role')), csv(''), assigned_players[position] or csv(''),
                 csv(''), csv(''), csv(''), csv(''), csv(''), csv(''), csv(''), csv('')
             })
         end
@@ -106,3 +113,21 @@ end
 write_csv(TACTICS_FILE, tactic_headers, tactic_rows)
 LOGGER:LogInfo(string.format('Career snapshot wrote %d players and %d tactic slots.', #squad_rows, #tactic_rows))
 LOGGER:LogInfo('Snapshot outputs: ' .. SQUAD_FILE .. ' and ' .. TACTICS_FILE)
+end
+
+local function refresh_snapshot(_, event_id)
+    if IsInCM() and (
+        event_id == ENUM_CM_EVENT_MSG_POST_LOAD_PREPARE or
+        event_id == ENUM_CM_EVENT_MSG_DAY_PASSED or
+        event_id == ENUM_CM_EVENT_MSG_ABOUT_TO_ENTER_PREMATCH
+    ) then
+        export_snapshot()
+    end
+end
+
+local function safe_refresh(...)
+    local ok, error = pcall(refresh_snapshot, ...)
+    if not ok then LOGGER:LogError('Career snapshot deferred: ' .. tostring(error)) end
+end
+
+AddEventHandler('post__CareerModeEvent', safe_refresh)

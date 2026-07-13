@@ -14,6 +14,7 @@ export interface Player {
   name: string
   age?: number
   number?: number
+  lineupPosition?: string
   positions: string[]
   overall: number
   potential?: number

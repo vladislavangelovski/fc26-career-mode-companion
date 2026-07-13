@@ -4,13 +4,15 @@ import type { AnalystState, Match, OCRValue, Player, RoleDefinition, RoleScore, 
 
 type View = 'Overview' | 'Squad' | 'Matches' | 'Tactics' | 'Recommendations'
 const views: { name: View; key: string }[] = [{ name: 'Overview', key: '01' }, { name: 'Squad', key: '02' }, { name: 'Matches', key: '03' }, { name: 'Tactics', key: '04' }, { name: 'Recommendations', key: '05' }]
-const fallbackPositions = [
-  ['GK',50,91],['LB',17,71],['CB',39,76],['CB',61,76],['RB',83,71],['CM',30,48],['CM',50,58],['CM',70,48],['LW',20,22],['ST',50,14],['RW',80,22],
-] as const
-
 const date = (value?: string) => value ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(new Date(value)) : '—'
 const result = (match: Match) => match.teamScore === undefined || match.opponentScore === undefined ? '—' : match.teamScore > match.opponentScore ? 'W' : match.teamScore < match.opponentScore ? 'L' : 'D'
 const roleFor = (slot: TacticSlot) => ROLE_LIBRARY.find(role => role.id === slot.role || role.name === slot.role) ?? ROLE_LIBRARY.find(role => role.eligiblePositions.includes(slot.position)) ?? ROLE_LIBRARY[ROLE_LIBRARY.length - 1]
+const FC_ROLES: Record<string, string[]> = {
+  GK:['Goalkeeper','Sweeper Keeper','Ball-Playing Keeper'], RB:['Fullback','Falseback','Wingback','Attacking Wingback','Inverted Wingback'], LB:['Fullback','Falseback','Wingback','Attacking Wingback','Inverted Wingback'],
+  CB:['Defender','Stopper','Ball-Playing Defender','Wide Back'], CDM:['Holding','Centre Half','Deep-Lying Playmaker','Wide Half','Box Crasher'], CM:['Box-to-Box','Holding','Deep-Lying Playmaker','Playmaker','Half-Winger'],
+  RM:['Winger','Wide Midfielder','Wide Playmaker','Inside Forward'], LM:['Winger','Wide Midfielder','Wide Playmaker','Inside Forward'], CAM:['Playmaker','Shadow Striker','Half Winger','Classic 10'],
+  RW:['Winger','Inside Forward','Wide Playmaker','False Winger'], LW:['Winger','Inside Forward','Wide Playmaker','False Winger'], ST:['Advanced Forward','Poacher','False 9','Target Forward','Roaming Striker'],
+}
 const playerApps = (state: AnalystState, id: string) => state.matches.flatMap(match => match.appearances).filter(app => app.playerId === id)
 
 function scoreFor(state: AnalystState, player: Player, slot: TacticSlot) {
@@ -18,10 +20,7 @@ function scoreFor(state: AnalystState, player: Player, slot: TacticSlot) {
   return eligible ? scorePlayer(player, roleFor(slot), playerApps(state, player.id)).total : Math.max(0, scorePlayer(player, roleFor(slot), playerApps(state, player.id)).total - 24)
 }
 
-function activeTactic(state: AnalystState): Tactic {
-  if (state.tactics[0]) return state.tactics[0]
-  return { id: 'default', name: 'Working shape', formation: '4–3–3', corrected: false, instructions: {}, slots: fallbackPositions.map(([position, x, y], index) => ({ id: `default:${index}`, position, x, y, role: ROLE_LIBRARY.find(r => r.eligiblePositions.includes(position))?.id ?? 'playmaker', focus: 'Balanced', playerId: state.players[index]?.id, imported: false })) }
-}
+const activeTactic = (state: AnalystState) => state.tactics[0]
 
 function Pitch({ tactic, state, selected, onSelect, assignments }: { tactic: Tactic; state: AnalystState; selected?: string; onSelect?: (id: string) => void; assignments?: Map<string, string> }) {
   return <div className="pitch" aria-label={`${tactic.formation} tactical pitch`}>
@@ -29,11 +28,10 @@ function Pitch({ tactic, state, selected, onSelect, assignments }: { tactic: Tac
     {tactic.slots.map((slot, index) => {
       const playerId = assignments?.get(slot.id) ?? slot.playerId
       const player = state.players.find(item => item.id === playerId)
-      const fallback = fallbackPositions[index]
-      const x = slot.x > 100 || slot.x < 0 ? fallback?.[1] ?? 50 : slot.x
-      const y = slot.y > 100 || slot.y < 0 ? fallback?.[2] ?? 50 : slot.y
+      const x = Math.max(5, Math.min(95, slot.x))
+      const y = Math.max(5, Math.min(88, slot.y))
       return <button key={slot.id} className={`pitch-player ${selected === slot.id ? 'selected' : ''}`} style={{ left: `${x}%`, top: `${y}%` }} onClick={() => onSelect?.(slot.id)}>
-        <span>{player?.number || slot.position}</span><b>{player?.name?.split(' ').at(-1) || slot.position}</b><small>{roleFor(slot).name}</small>
+        <span>{player?.number || slot.position}</span><b>{player?.name?.split(' ').at(-1) || slot.position}</b><small>{slot.role}<em>{slot.focus}</em></small>
       </button>
     })}
   </div>
@@ -45,16 +43,16 @@ function Empty({ children }: { children: string }) { return <div className="empt
 function Overview({ state, setView }: { state: AnalystState; setView: (view: View) => void }) {
   const tactic = activeTactic(state)
   const recent = state.matches.slice(0, 5)
-  const unavailable = state.players.filter(p => p.injured || p.suspended)
-  const warnings = tactic.slots.map(slot => ({ slot, top: Math.max(...state.players.map(p => scoreFor(state, p, slot)), 0) })).filter(item => item.top < 70)
+  const unavailable = state.career.teamId ? state.players.filter(p => p.injured || p.suspended) : []
+  const warnings = tactic ? tactic.slots.map(slot => ({ slot, top: Math.max(...state.players.map(p => scoreFor(state, p, slot)), 0) })).filter(item => item.top < 70) : []
   return <>
-    <PageTitle eyebrow="Command centre" title={state.career.teamName} note={`${state.career.season} · ${tactic.formation}`} />
+    <PageTitle eyebrow="Command centre" title={state.career.teamName} note={tactic ? `${state.career.season} · ${tactic.formation}` : 'Waiting for squad and tactics exports'} />
     <div className="overview-grid">
-      <section className="pitch-panel"><SectionTitle title="Active system" action="Edit tactics" onAction={() => setView('Tactics')} /><Pitch tactic={tactic} state={state}/></section>
+      <section className="pitch-panel"><SectionTitle title="Active system" action={tactic ? 'Edit tactics' : undefined} onAction={() => setView('Tactics')} />{tactic ? <Pitch tactic={tactic} state={state}/> : <Empty>No tactic has been imported from Live Editor yet.</Empty>}</section>
       <aside className="overview-rail">
         <section><SectionTitle title="Last five"/><div className="form-strip">{recent.length ? recent.map(match => <span key={match.id} className={result(match)}>{result(match)}</span>) : <em>NO MATCHES</em>}</div></section>
         <section><SectionTitle title="Availability" count={unavailable.length}/>{unavailable.length ? unavailable.map(p => <Line key={p.id} left={p.name} right={p.injured ? 'Injured' : 'Suspended'} tone="warn"/>) : <Line left="Full squad available" right="Clear" tone="good"/>}</section>
-        <section><SectionTitle title="Role warnings" count={warnings.length}/>{warnings.length ? warnings.slice(0, 4).map(({ slot, top }) => <Line key={slot.id} left={`${slot.position} · ${roleFor(slot).name}`} right={`${Math.round(top)} fit`} tone="warn"/>) : <Line left="Starting roles covered" right="≥ 70" tone="good"/>}</section>
+        <section><SectionTitle title="Role warnings" count={warnings.length}/>{warnings.length ? warnings.slice(0, 4).map(({ slot, top }) => <Line key={slot.id} left={`${slot.position} · ${slot.role} · ${slot.focus}`} right={`${Math.round(top)} fit`} tone="warn"/>) : <Line left="Starting roles covered" right="≥ 70" tone="good"/>}</section>
       </aside>
     </div>
     <section className="lower-band"><SectionTitle title="Recent matches" action="Open match room" onAction={() => setView('Matches')}/>{recent.length ? <MatchRows matches={recent}/> : <Empty>Run the telemetry script before a match to begin the timeline.</Empty>}</section>
@@ -64,7 +62,7 @@ function Overview({ state, setView }: { state: AnalystState; setView: (view: Vie
 function Squad({ state }: { state: AnalystState }) {
   const [selectedId, setSelected] = useState(state.players[0]?.id)
   const [sort, setSort] = useState<'name'|'overall'|'age'>('overall')
-  const players = [...state.players].sort((a,b) => sort === 'name' ? a.name.localeCompare(b.name) : (b[sort] ?? 0) - (a[sort] ?? 0))
+  const players = state.career.teamId ? [...state.players].sort((a,b) => sort === 'name' ? a.name.localeCompare(b.name) : (b[sort] ?? 0) - (a[sort] ?? 0)) : []
   const selected = state.players.find(p => p.id === selectedId) ?? players[0]
   return <>
     <PageTitle eyebrow="Personnel" title="Squad intelligence" note={`${state.players.length} registered players`} />
@@ -114,7 +112,13 @@ function Matches({ state, onState }: { state: AnalystState; onState: (state: Ana
 }
 
 function Tactics({ state, onState }: { state: AnalystState; onState: (state: AnalystState) => void }) {
-  const [draft, setDraft] = useState(activeTactic(state))
+  const tactic = activeTactic(state)
+  if (!tactic) return <><PageTitle eyebrow="Game model" title="Tactical laboratory" note="Waiting for Live Editor"/><section className="lower-band"><Empty>No tactic export is available. The app will not invent a formation.</Empty></section></>
+  return <TacticsEditor state={state} onState={onState} tactic={tactic}/>
+}
+
+function TacticsEditor({ state, onState, tactic }: { state: AnalystState; onState: (state: AnalystState) => void; tactic: Tactic }) {
+  const [draft, setDraft] = useState(tactic)
   const [selectedId, setSelected] = useState(draft.slots[0]?.id)
   const slot = draft.slots.find(item => item.id === selectedId)
   const updateSlot = (change: Partial<TacticSlot>) => setDraft({...draft, slots: draft.slots.map(item => item.id === selectedId ? {...item,...change}:item)})
@@ -123,9 +127,9 @@ function Tactics({ state, onState }: { state: AnalystState; onState: (state: Ana
     <div className="tactics-layout"><section className="pitch-panel"><Pitch tactic={draft} state={state} selected={selectedId} onSelect={setSelected}/></section>
       <aside className="inspector"><p className="kicker">SELECTED SLOT</p><h2>{slot?.position || '—'}</h2>{slot && <>
         <label>Assigned player<select value={slot.playerId || ''} onChange={e => updateSlot({playerId:e.target.value || undefined})}><option value="">Unassigned</option>{state.players.map(p => <option value={p.id} key={p.id}>{p.name} · {p.overall}</option>)}</select></label>
-        <label>Position<select value={slot.position} onChange={e => updateSlot({position:e.target.value})}>{['GK','LB','CB','RB','LWB','RWB','CDM','CM','CAM','LM','RM','LW','RW','CF','ST'].map(p => <option key={p}>{p}</option>)}</select></label>
-        <label>Role<select value={slot.role} onChange={e => updateSlot({role:e.target.value})}>{ROLE_LIBRARY.map(role => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label>
-        <label>Focus<select value={slot.focus} onChange={e => updateSlot({focus:e.target.value})}>{['Balanced','Defend','Support','Build-Up','Attack','Versatile'].map(f => <option key={f}>{f}</option>)}</select></label>
+        <label>Position<select value={slot.position} onChange={e => updateSlot({position:e.target.value,role:FC_ROLES[e.target.value][0]})}>{['GK','LB','CB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST'].map(p => <option key={p}>{p}</option>)}</select></label>
+        <label>Role<select value={slot.role} onChange={e => updateSlot({role:e.target.value})}>{(FC_ROLES[slot.position] ?? [slot.role]).map(role => <option key={role}>{role}</option>)}</select></label>
+        <label>Focus<select value={slot.focus} onChange={e => updateSlot({focus:e.target.value})}>{['Balanced','Defend','Support','Build-Up','Attack','Versatile','Ball-Winning'].map(f => <option key={f}>{f}</option>)}</select></label>
         <label>X position<input type="range" min="8" max="92" value={slot.x} onChange={e => updateSlot({x:Number(e.target.value)})}/></label><label>Y position<input type="range" min="8" max="92" value={slot.y} onChange={e => updateSlot({y:Number(e.target.value)})}/></label>
         <SectionTitle title="Ranked candidates"/>{state.players.map(player => ({player,score:scoreFor(state,player,slot)})).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score},index)=><Line key={player.id} left={`${index+1}. ${player.name}`} right={`${Math.round(score)}`}/>)}</>}
         <button className="primary save-tactic" onClick={save}>Save tactical corrections</button>
@@ -134,10 +138,11 @@ function Tactics({ state, onState }: { state: AnalystState; onState: (state: Ana
 
 function Recommendations({ state }: { state: AnalystState }) {
   const tactic = activeTactic(state)
-  const xi = assignUniqueXI(state.players, tactic.slots, (player,slot) => scoreFor(state,player,slot))
+  const xi = tactic ? assignUniqueXI(state.players, tactic.slots, (player,slot) => scoreFor(state,player,slot)) : []
   const assignment = new Map(xi.map(item => [item.slotId,item.playerId]))
-  const needs = tactic.slots.map(slot => { const ranked = state.players.map(player => ({player, score:scoreFor(state,player,slot)})).sort((a,b)=>b.score-a.score); return {slot,starter:ranked[0],backup:ranked[1]} }).filter(item => (item.starter?.score ?? 0)<70 || (item.backup?.score ?? 0)<65 || item.starter?.player.age && item.starter.player.age! >= 32)
+  const needs = tactic ? tactic.slots.map(slot => { const ranked = state.players.map(player => ({player, score:scoreFor(state,player,slot)})).sort((a,b)=>b.score-a.score); return {slot,starter:ranked[0],backup:ranked[1]} }).filter(item => (item.starter?.score ?? 0)<70 || (item.backup?.score ?? 0)<65 || item.starter?.player.age && item.starter.player.age! >= 32) : []
   const [selected, setSelected] = useState(xi[0]?.slotId)
+  if (!tactic) return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note="Waiting for verified squad and tactics exports"/><section className="lower-band"><Empty>Recommendations stay disabled until a real tactic is imported.</Empty></section></>
   const selectedAssignment = xi.find(item => item.slotId === selected)
   const selectedSlot = tactic.slots.find(slot => slot.id === selected)
   const selectedPlayer = state.players.find(player => player.id === selectedAssignment?.playerId)

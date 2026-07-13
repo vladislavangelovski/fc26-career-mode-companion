@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { n, parseCSV } from '../src/shared/csv'
-import { groupBy, mergeTelemetry, positionName as position } from '../src/shared/telemetry'
+import { formationName, groupBy, mergeTelemetry, positionName as position, tacticRoleFocus } from '../src/shared/telemetry'
 import type { Player, Tactic, TacticSlot } from '../src/shared/types'
 import { CareerStore } from './store'
 
@@ -32,6 +32,7 @@ export class Importer {
     this.store.state.sync = { status: 'importing', message: 'Reading Live Editor exports…' }
     this.emit()
     const errors: string[] = []
+    const missing: string[] = []
     for (const [kind, file] of Object.entries(this.store.state.settings)) {
       try {
         const rows = parseCSV(await readFile(file, 'utf8'))
@@ -39,10 +40,11 @@ export class Importer {
         if (kind === 'squadPath') this.importSquad(rows)
         if (kind === 'tacticsPath') this.importTactics(rows)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`${path.basename(file)}: ${String(error)}`)
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') missing.push(path.basename(file))
+        else errors.push(`${path.basename(file)}: ${String(error)}`)
       }
     }
-    this.store.state.sync = { status: errors.length ? 'error' : 'watching', lastImport: new Date().toISOString(), message: errors.join('\n') || 'Live Editor files are being watched' }
+    this.store.state.sync = { status: errors.length ? 'error' : 'watching', lastImport: new Date().toISOString(), message: errors.join('\n') || (missing.length ? `Waiting for ${missing.join(', ')}` : 'Live Editor exports imported') }
     await this.store.save(); this.emit()
     return this.store.state
   }
@@ -60,7 +62,7 @@ export class Importer {
       const attributes = Object.fromEntries(Object.entries(row).filter(([key, value]) => !fixed.has(key) && value !== '').map(([key, value]) => [key, n(value)]))
       const positions = [row.position, ...Array.from({ length: 7 }, (_, i) => row[`preferred_position_${i + 1}`])].map(position).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i)
       const snapshot = { capturedAt: row.captured_at, overall: n(row.overall), form: row.form === '' ? undefined : n(row.form), morale: row.morale === '' ? undefined : n(row.morale), fitness: row.fitness === '' ? undefined : n(row.fitness), sharpness: row.sharpness === '' ? undefined : n(row.sharpness) }
-      const player: Player = { id, name: row.player, age: n(row.age), number: n(row.jersey_number), positions, overall: n(row.overall), potential: n(row.potential), attributes, familiarity: current?.familiarity ?? {}, injured: n(row.injury) > 0, suspended: n(row.suspension) > 0, form: snapshot.form, morale: snapshot.morale, fitness: snapshot.fitness, sharpness: snapshot.sharpness, contractEnd: row.contract_end || undefined, wage: n(row.wage), snapshots: current?.snapshots ?? [] }
+      const player: Player = { id, name: row.player, age: n(row.age), number: n(row.jersey_number), lineupPosition: row.position, positions, overall: n(row.overall), potential: n(row.potential), attributes, familiarity: current?.familiarity ?? {}, injured: n(row.injury) > 0, suspended: n(row.suspension) > 0, form: snapshot.form, morale: snapshot.morale, fitness: snapshot.fitness, sharpness: snapshot.sharpness, contractEnd: row.contract_end || undefined, wage: n(row.wage), snapshots: current?.snapshots ?? [] }
       if (!player.snapshots.some(item => item.capturedAt === snapshot.capturedAt)) player.snapshots.push(snapshot)
       if (current) Object.assign(current, player); else this.store.state.players.push(player)
       this.store.state.career = { ...this.store.state.career, teamId: row.team_id, teamName: row.team || this.store.state.career.teamName }
@@ -72,8 +74,13 @@ export class Importer {
     const grouped = groupBy(rows, row => row.formation_id || 'active')
     for (const [id, tacticRows] of grouped) {
       const existing = this.store.state.tactics.find(t => t.id === id)
-      const slots: TacticSlot[] = tacticRows.map((row, index) => ({ id: `${id}:${row.slot || index}`, position: position(row.position) || `Slot ${index + 1}`, x: n(row.x, 50), y: n(row.y, 50), role: row.role || 'Balanced', focus: row.focus || 'Balanced', playerId: row.assigned_player_id || undefined, imported: true }))
-      const tactic: Tactic = { id, name: tacticRows[0].formation_name || 'Active tactic', formation: tacticRows[0].formation_name || 'Imported formation', slots, instructions: {}, corrected: existing?.corrected ?? false }
+      const normalized = tacticRows.every(row => Math.abs(n(row.x, 2)) <= 1 && Math.abs(n(row.y, 2)) <= 1)
+      const slots: TacticSlot[] = tacticRows.map((row, index) => {
+        const decoded = tacticRoleFocus(row.role)
+        return { id: `${id}:${row.slot || index}`, position: position(row.position) || `Slot ${index + 1}`, x: normalized ? n(row.x, .5) * 100 : n(row.x, 50), y: normalized ? (1 - n(row.y, .5)) * 100 : n(row.y, 50), role: decoded?.[0] ?? (row.role ? `FC role ${row.role}` : 'Unassigned'), focus: row.focus || decoded?.[1] || 'Unassigned', playerId: row.assigned_player_id || this.store.state.players.find(player => player.lineupPosition === row.position)?.id, imported: true }
+      })
+      const importedName = formationName(tacticRows.map(row => row.position)) || tacticRows[0].formation_name || 'Imported formation'
+      const tactic: Tactic = { id, name: importedName, formation: importedName, slots, instructions: {}, corrected: existing?.corrected ?? false }
       if (existing?.corrected) tactic.slots = slots.map(slot => existing.slots.find(s => s.id === slot.id) ?? slot)
       if (existing) Object.assign(existing, tactic); else this.store.state.tactics.push(tactic)
     }

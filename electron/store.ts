@@ -6,23 +6,27 @@ import type { AnalystState } from '../src/shared/types'
 
 const VERSION = 1
 const desktop = path.join(os.homedir(), 'Desktop')
+const directory = path.join(app.getPath('appData'), 'FC26 Career Analyst')
+const liveEditorDirectory = path.join(directory, 'Live Editor')
+const exportNames = {
+  telemetryPath: 'fc26_match_telemetry.csv',
+  squadPath: 'fc26_squad_snapshot.csv',
+  tacticsPath: 'fc26_tactics_snapshot.csv',
+} as const
 
 export function initialState(): AnalystState {
   return {
     schemaVersion: VERSION,
     career: { teamName: 'Unlinked career', season: 'Current season', createdAt: new Date().toISOString() },
     players: [], matches: [], tactics: [],
-    settings: {
-      telemetryPath: path.join(desktop, 'fc26_match_telemetry.csv'),
-      squadPath: path.join(desktop, 'fc26_squad_snapshot.csv'),
-      tacticsPath: path.join(desktop, 'fc26_tactics_snapshot.csv'),
-    },
+    settings: Object.fromEntries(Object.entries(exportNames).map(([key, name]) => [key, path.join(liveEditorDirectory, name)])) as AnalystState['settings'],
     sync: { status: 'watching', message: 'Waiting for Live Editor exports' },
   }
 }
 
 export class CareerStore {
-  readonly directory = path.join(app.getPath('appData'), 'FC26 Career Analyst')
+  readonly directory = directory
+  readonly liveEditorDirectory = liveEditorDirectory
   readonly screenshotDirectory = path.join(this.directory, 'screenshots')
   private readonly file = path.join(this.directory, 'career.json')
   private readonly backupFile = path.join(this.directory, 'career.backup.json')
@@ -30,13 +34,22 @@ export class CareerStore {
 
   async load() {
     await mkdir(this.screenshotDirectory, { recursive: true })
+    await mkdir(this.liveEditorDirectory, { recursive: true })
     try {
       this.state = JSON.parse(await readFile(this.file, 'utf8')) as AnalystState
+      this.state.tactics = this.state.tactics.filter(tactic => tactic.id !== 'default' || tactic.slots.some(slot => slot.imported))
     } catch {
       try {
         this.state = JSON.parse(await readFile(this.backupFile, 'utf8')) as AnalystState
         await this.save()
       } catch { await this.save() }
+    }
+    for (const [key, name] of Object.entries(exportNames) as [keyof AnalystState['settings'], string][]) {
+      const oldPath = path.join(desktop, name)
+      if (this.state.settings[key].toLowerCase() !== oldPath.toLowerCase()) continue
+      const newPath = path.join(this.liveEditorDirectory, name)
+      try { await rename(oldPath, newPath) } catch { /* missing or already migrated */ }
+      this.state.settings[key] = newPath
     }
     return this.state
   }

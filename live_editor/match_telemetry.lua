@@ -1,9 +1,8 @@
 require 'imports/career_mode/enums'
 require 'imports/other/helpers'
 
--- Run once from Live Editor while your Career Mode save is open.
--- Leave it loaded; one row per player appearance is appended after every user match.
-local OUTPUT_FILE = string.format('%s\\Desktop\\fc26_match_telemetry.csv', os.getenv('USERPROFILE'))
+-- Auto-runs with Live Editor; one row per player appearance is appended after every user match.
+local OUTPUT_FILE = string.format('%s\\FC26 Career Analyst\\Live Editor\\fc26_match_telemetry.csv', os.getenv('APPDATA'))
 local SCHEMA_VERSION = 1
 
 local baseline
@@ -55,16 +54,18 @@ end
 local function get_managed_team_id()
     if managed_team_id then return managed_team_id end
 
-    local users = GetDBTableRows('career_users')
-    assert(users and users[1] and users[1].clubteamid, 'Could not read career_users.clubteamid')
+    local ok, users = pcall(GetDBTableRows, 'career_users')
+    if not ok then return nil end
+    if not (users and users[1] and users[1].clubteamid) then return nil end
     managed_team_id = number(users[1].clubteamid.value)
-    assert(managed_team_id > 0, 'Managed team ID is invalid')
+    if managed_team_id <= 0 then managed_team_id = nil end
     return managed_team_id
 end
 
 local function take_snapshot()
     local result = {}
     local team_id = get_managed_team_id()
+    if not team_id then return nil end
 
     for _, stat in ipairs(GetPlayersStats()) do
         if number(stat.teamid) == team_id then
@@ -136,6 +137,7 @@ local function write_match(event_id)
     end
 
     local current = take_snapshot()
+    if not current then return false end
     local file
     local date = baseline_date or career_date()
     local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
@@ -195,7 +197,9 @@ local function before_match(_, event_id)
             if not write_match(pending_completion_event) then return end
             pending_completion_event = nil
         end
-        baseline = take_snapshot()
+        local snapshot = take_snapshot()
+        if not snapshot then return end
+        baseline = snapshot
         baseline_date = career_date()
         pending_fixture = find_fixture()
         LOGGER:LogInfo('Match telemetry captured the pre-match snapshot.')
@@ -221,9 +225,36 @@ local function after_match(_, event_id)
     end
 end
 
-assert(IsInCM(), 'Load a Career Mode save before running match_telemetry.lua')
-baseline = take_snapshot()
-baseline_date = career_date()
-AddEventHandler('pre__CareerModeEvent', before_match)
-AddEventHandler('post__CareerModeEvent', after_match)
-LOGGER:LogInfo(string.format('Match telemetry armed for team %d. Output: %s', get_managed_team_id(), OUTPUT_FILE))
+local armed = false
+local function arm()
+    if armed or not IsInCM() then return end
+    local snapshot = take_snapshot()
+    if not snapshot then return end
+    baseline = snapshot
+    baseline_date = career_date()
+    armed = true
+    LOGGER:LogInfo(string.format('Match telemetry armed for team %d. Output: %s', get_managed_team_id(), OUTPUT_FILE))
+end
+
+local function handle_before(...)
+    local _, event_id = ...
+    if event_id ~= ENUM_CM_EVENT_MSG_ABOUT_TO_ENTER_PREMATCH then return end
+    arm()
+    if armed then before_match(...) end
+end
+
+local function handle_after(...)
+    arm()
+    if armed then after_match(...) end
+end
+
+local function safe(label, callback, ...)
+    local ok, error = pcall(callback, ...)
+    if not ok then LOGGER:LogError(label .. ' deferred: ' .. tostring(error)) end
+end
+
+local function before_match_autorun(...) safe('Match telemetry pre-event', handle_before, ...) end
+local function after_match_autorun(...) safe('Match telemetry post-event', handle_after, ...) end
+
+AddEventHandler('pre__CareerModeEvent', before_match_autorun)
+AddEventHandler('post__CareerModeEvent', after_match_autorun)

@@ -1,8 +1,31 @@
 import { n } from './csv'
 import type { AnalystState, Appearance } from './types'
 
-const POSITION_NAMES: Record<string, string> = { '0':'GK','1':'SW','2':'RWB','3':'RB','4':'RCB','5':'CB','6':'LCB','7':'LB','8':'LWB','9':'RDM','10':'CDM','11':'LDM','12':'RM','13':'RCM','14':'CM','15':'LCM','16':'LM','17':'RAM','18':'CAM','19':'LAM','20':'RF','21':'CF','22':'LF','23':'RW','24':'RS','25':'ST','26':'LS','27':'LW' }
+const POSITION_NAMES: Record<string, string> = { '0':'GK','1':'GK','2':'RB','3':'RB','4':'CB','5':'CB','6':'CB','7':'LB','8':'LB','9':'CDM','10':'CDM','11':'CDM','12':'RM','13':'CM','14':'CM','15':'CM','16':'LM','17':'CAM','18':'CAM','19':'CAM','20':'RW','21':'ST','22':'LW','23':'RW','24':'ST','25':'ST','26':'ST','27':'LW' }
 export const positionName = (value?: string) => POSITION_NAMES[value ?? ''] ?? value ?? ''
+
+const TACTIC_ROLE_FOCUS: Record<string, [string, string]> = {
+  '4162':['Goalkeeper','Balanced'], '8386':['Fullback','Balanced'],
+  '12737':['Defender','Defend'], '12865':['Ball-Playing Defender','Defend'],
+  '17095':['Holding','Ball-Winning'], '25605':['Winger','Attack'],
+  '25731':['Wide Midfielder','Build-Up'], '30346':['Classic 10','Versatile'],
+  '38213':['Target Forward','Attack'], '38275':['False 9','Build-Up'],
+}
+export const tacticRoleFocus = (value?: string) => TACTIC_ROLE_FOCUS[value ?? '']
+
+export function formationName(positions: string[]) {
+  const codes = positions.map(Number)
+  const counts = [
+    codes.filter(value => value >= 1 && value <= 8).length,
+    codes.filter(value => value >= 9 && value <= 11).length,
+    codes.filter(value => value >= 12 && value <= 16).length,
+    codes.filter(value => value >= 17 && value <= 19).length,
+    codes.filter(value => value >= 20 && value <= 27).length,
+  ].filter(Boolean)
+  if (counts.reduce((sum, value) => sum + value, 0) !== 10) return ''
+  const name = counts.join('-')
+  return name === '4-1-2-1-2' && codes.includes(12) && codes.includes(16) ? `${name} Wide` : name
+}
 
 export function groupBy<T>(items: T[], key: (item: T) => string) {
   const result = new Map<string, T[]>()
