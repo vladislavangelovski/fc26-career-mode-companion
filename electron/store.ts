@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -15,12 +16,12 @@ const exportNames = {
   tacticsPath: 'fc26_tactics_snapshot.csv',
 } as const
 
-export function initialState(): AnalystState {
+export function initialState(settings?: AnalystState['settings'], profileId = 'unlinked'): AnalystState {
   return {
     schemaVersion: VERSION,
-    career: { teamName: 'Unlinked career', season: 'Current season', createdAt: new Date().toISOString() },
+    career: { profileId, teamName: 'Unlinked career', season: 'Current season', createdAt: new Date().toISOString() },
     players: [], matches: [], tactics: [],
-    settings: Object.fromEntries(Object.entries(exportNames).map(([key, name]) => [key, path.join(liveEditorDirectory, name)])) as AnalystState['settings'],
+    settings: settings ?? Object.fromEntries(Object.entries(exportNames).map(([key, name]) => [key, path.join(liveEditorDirectory, name)])) as AnalystState['settings'],
     sync: { status: 'watching', message: 'Waiting for Live Editor exports' },
   }
 }
@@ -28,23 +29,40 @@ export function initialState(): AnalystState {
 export class CareerStore {
   readonly directory = directory
   readonly liveEditorDirectory = liveEditorDirectory
-  readonly screenshotDirectory = path.join(this.directory, 'screenshots')
-  private readonly file = path.join(this.directory, 'career.json')
-  private readonly backupFile = path.join(this.directory, 'career.backup.json')
+  private readonly profilesDirectory = path.join(this.directory, 'careers')
+  private readonly activeFile = path.join(this.profilesDirectory, 'active.txt')
+  private readonly legacyFile = path.join(this.directory, 'career.json')
+  private readonly legacyBackupFile = path.join(this.directory, 'career.backup.json')
+  private profileId = 'unlinked'
   state = initialState()
 
+  private get profileDirectory() { return path.join(this.profilesDirectory, createHash('sha256').update(this.profileId).digest('hex').slice(0, 16)) }
+  private get file() { return path.join(this.profileDirectory, 'career.json') }
+  private get backupFile() { return path.join(this.profileDirectory, 'career.backup.json') }
+  get screenshotDirectory() { return path.join(this.profileDirectory, 'screenshots') }
+
+  private async readProfile() {
+    try { return migrateState(JSON.parse(await readFile(this.file, 'utf8')) as AnalystState) }
+    catch { return migrateState(JSON.parse(await readFile(this.backupFile, 'utf8')) as AnalystState) }
+  }
+
   async load() {
-    await mkdir(this.screenshotDirectory, { recursive: true })
+    await mkdir(this.profilesDirectory, { recursive: true })
     await mkdir(this.liveEditorDirectory, { recursive: true })
     try {
-      this.state = migrateState(JSON.parse(await readFile(this.file, 'utf8')) as AnalystState)
-      this.state.tactics = this.state.tactics.filter(tactic => tactic.id !== 'default' || tactic.slots.some(slot => slot.imported))
+      this.profileId = (await readFile(this.activeFile, 'utf8')).trim()
+      this.state = await this.readProfile()
     } catch {
       try {
-        this.state = migrateState(JSON.parse(await readFile(this.backupFile, 'utf8')) as AnalystState)
-        await this.save()
-      } catch { await this.save() }
+        this.state = migrateState(JSON.parse(await readFile(this.legacyFile, 'utf8')) as AnalystState)
+        this.profileId = this.state.career.profileId || (this.state.career.teamId ? `team-${this.state.career.teamId}` : 'unlinked')
+      } catch {
+        try { this.state = migrateState(JSON.parse(await readFile(this.legacyBackupFile, 'utf8')) as AnalystState) } catch { this.state = initialState() }
+        this.profileId = this.state.career.profileId || (this.state.career.teamId ? `team-${this.state.career.teamId}` : 'unlinked')
+      }
     }
+    this.state.career.profileId = this.profileId
+    this.state.tactics = this.state.tactics.filter(tactic => tactic.id !== 'default' || tactic.slots.some(slot => slot.imported))
     for (const [key, name] of Object.entries(exportNames) as [keyof AnalystState['settings'], string][]) {
       const oldPath = path.join(desktop, name)
       if (this.state.settings[key].toLowerCase() !== oldPath.toLowerCase()) continue
@@ -52,11 +70,35 @@ export class CareerStore {
       try { await rename(oldPath, newPath) } catch { /* missing or already migrated */ }
       this.state.settings[key] = newPath
     }
+    await writeFile(this.activeFile, this.profileId, 'utf8')
+    await this.save()
+    return this.state
+  }
+
+  async activate(profileId: string, teamId?: string) {
+    if (!profileId || profileId === this.profileId) return this.state
+    if (teamId && this.profileId === `team-${teamId}`) {
+      await this.save()
+      this.profileId = profileId
+      this.state.career.profileId = profileId
+      await writeFile(this.activeFile, profileId, 'utf8')
+      await this.save()
+      return this.state
+    }
+    const settings = this.state.settings
+    await this.save()
+    this.profileId = profileId
+    try { this.state = await this.readProfile() } catch { this.state = initialState(settings, profileId) }
+    this.state.career.profileId = profileId
+    await writeFile(this.activeFile, profileId, 'utf8')
+    await this.save()
     return this.state
   }
 
   async save() {
-    await mkdir(this.directory, { recursive: true })
+    this.profileId = this.state.career.profileId || this.profileId
+    this.state.career.profileId = this.profileId
+    await mkdir(this.profileDirectory, { recursive: true })
     const temp = `${this.file}.tmp`
     await writeFile(temp, JSON.stringify(this.state, null, 2), 'utf8')
     try { await stat(this.file); await copyFile(this.file, this.backupFile) } catch { /* first save */ }
@@ -69,7 +111,11 @@ export class CareerStore {
   async restoreFrom(source: string) {
     const restored = JSON.parse(await readFile(source, 'utf8')) as AnalystState
     if (![1, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
+    await this.save()
     this.state = migrateState(restored)
+    this.profileId = this.state.career.profileId || (this.state.career.teamId ? `team-${this.state.career.teamId}` : `restored-${Date.now()}`)
+    this.state.career.profileId = this.profileId
+    await writeFile(this.activeFile, this.profileId, 'utf8')
     return this.save()
   }
 }

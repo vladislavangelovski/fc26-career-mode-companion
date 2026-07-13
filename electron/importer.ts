@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { n, parseCSV } from '../src/shared/csv'
-import { formationName, groupBy, mergeTelemetry, positionName as position, tacticRoleFocus } from '../src/shared/telemetry'
+import { careerProfileId, formationName, groupBy, mergeTelemetry, positionName as position, rowsForCareer, tacticRoleFocus } from '../src/shared/telemetry'
 import type { Player, Tactic, TacticSlot } from '../src/shared/types'
 import { CareerStore } from './store'
 
@@ -33,16 +33,23 @@ export class Importer {
     this.emit()
     const errors: string[] = []
     const missing: string[] = []
+    const sources: { kind: string; rows: Record<string, string>[] }[] = []
     for (const [kind, file] of Object.entries(this.store.state.settings)) {
       try {
-        const rows = parseCSV(await readFile(file, 'utf8'))
-        if (kind === 'telemetryPath') this.importTelemetry(rows)
-        if (kind === 'squadPath') this.importSquad(rows)
-        if (kind === 'tacticsPath') this.importTactics(rows)
+        sources.push({ kind, rows: parseCSV(await readFile(file, 'utf8')) })
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') missing.push(path.basename(file))
         else errors.push(`${path.basename(file)}: ${String(error)}`)
       }
+    }
+    const identityRow = sources.find(source => source.kind === 'squadPath')?.rows[0] ?? sources.find(source => source.kind === 'tacticsPath')?.rows[0] ?? sources.find(source => source.kind === 'telemetryPath')?.rows.at(-1)
+    const profileId = careerProfileId(identityRow)
+    if (profileId) await this.store.activate(profileId, identityRow?.team_id)
+    for (const source of sources) {
+      const rows = profileId ? rowsForCareer(source.rows, profileId) : source.rows
+      if (source.kind === 'telemetryPath') this.importTelemetry(rows)
+      if (source.kind === 'squadPath') this.importSquad(rows)
+      if (source.kind === 'tacticsPath') this.importTactics(rows)
     }
     this.store.state.sync = { status: errors.length ? 'error' : 'watching', lastImport: new Date().toISOString(), message: errors.join('\n') || (missing.length ? `Waiting for ${missing.join(', ')}` : 'Live Editor exports imported') }
     await this.store.save(); this.emit()
@@ -54,7 +61,7 @@ export class Importer {
   }
 
   private importSquad(rows: Record<string, string>[]) {
-    const fixed = new Set(['schema_version','captured_at','career_date','team_id','team','player_id','player','age','jersey_number','position','preferred_position_1','preferred_position_2','preferred_position_3','preferred_position_4','preferred_position_5','preferred_position_6','preferred_position_7','overall','potential','injury','suspension','form','morale','fitness','sharpness','contract_end','contract_months','wage','squad_role','playstyle_trait_1','playstyle_trait_2','role_1','role_2','role_3','role_4','role_5'])
+    const fixed = new Set(['schema_version','career_id','captured_at','career_date','team_id','team','player_id','player','age','jersey_number','position','preferred_position_1','preferred_position_2','preferred_position_3','preferred_position_4','preferred_position_5','preferred_position_6','preferred_position_7','overall','potential','injury','suspension','form','morale','fitness','sharpness','contract_end','contract_months','wage','squad_role','playstyle_trait_1','playstyle_trait_2','role_1','role_2','role_3','role_4','role_5'])
     for (const row of rows) {
       const id = row.player_id
       if (!id) continue
@@ -65,7 +72,7 @@ export class Importer {
       const player: Player = { id, name: row.player, age: n(row.age), number: n(row.jersey_number), lineupPosition: row.position, positions, overall: n(row.overall), potential: n(row.potential), attributes, familiarity: current?.familiarity ?? {}, injured: n(row.injury) > 0, suspended: n(row.suspension) > 0, form: snapshot.form, morale: snapshot.morale, fitness: snapshot.fitness, sharpness: snapshot.sharpness, contractEnd: row.contract_end || undefined, wage: n(row.wage), snapshots: current?.snapshots ?? [] }
       if (!player.snapshots.some(item => item.capturedAt === snapshot.capturedAt)) player.snapshots.push(snapshot)
       if (current) Object.assign(current, player); else this.store.state.players.push(player)
-      this.store.state.career = { ...this.store.state.career, teamId: row.team_id, teamName: row.team || this.store.state.career.teamName }
+      this.store.state.career = { ...this.store.state.career, profileId: careerProfileId(row) || this.store.state.career.profileId, teamId: row.team_id, teamName: row.team || this.store.state.career.teamName }
     }
   }
 

@@ -7,6 +7,8 @@ describe('Live Editor autorun safety', () => {
     const before = script.slice(script.indexOf('local function handle_before'), script.indexOf('local function handle_after'))
     expect(before.indexOf('event_id ~= ENUM_CM_EVENT_MSG_ABOUT_TO_ENTER_PREMATCH')).toBeLessThan(before.indexOf('arm()'))
     expect(script).toContain('pcall(callback, ...)')
+    expect(script).toContain("'schema_version', 'career_id', 'match_id'")
+    expect(script).toContain("OUTPUT_FILE .. '.legacy-'")
     expect(script.trim().endsWith("AddEventHandler('post__CareerModeEvent', after_match_autorun)")).toBe(true)
   })
 })

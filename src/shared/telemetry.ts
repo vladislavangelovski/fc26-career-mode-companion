@@ -13,6 +13,8 @@ const TACTIC_ROLE_FOCUS: Record<string, [string, string]> = {
   '38213':['Target Forward','Attack'], '38275':['False 9','Build-Up'],
 }
 export const tacticRoleFocus = (value?: string) => TACTIC_ROLE_FOCUS[value ?? '']
+export const careerProfileId = (row?: Record<string, string>) => row?.career_id || (row?.team_id ? `team-${row.team_id}` : '')
+export const rowsForCareer = (rows: Record<string, string>[], profileId: string) => rows.filter(row => !careerProfileId(row) || careerProfileId(row) === profileId)
 
 export function formationName(positions: string[]) {
   const codes = positions.map(Number)

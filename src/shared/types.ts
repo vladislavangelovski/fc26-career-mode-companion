@@ -136,7 +136,7 @@ export interface RoleScore {
 
 export interface AnalystState {
   schemaVersion: number
-  career: { teamId?: string; teamName: string; season: string; createdAt: string }
+  career: { profileId?: string; teamId?: string; teamName: string; season: string; createdAt: string }
   players: Player[]
   matches: Match[]
   tactics: Tactic[]

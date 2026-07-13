@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initialTestState } from './test-utils'
-import { formationName, mergeTelemetry, positionName, tacticRoleFocus } from './telemetry'
+import { careerProfileId, formationName, mergeTelemetry, positionName, rowsForCareer, tacticRoleFocus } from './telemetry'
 
 describe('telemetry merge', () => {
   it('recognizes the exported 4-1-2-1-2 wide shape', () => {
@@ -13,6 +13,13 @@ describe('telemetry merge', () => {
     expect(tacticRoleFocus('12865')).toEqual(['Ball-Playing Defender','Defend'])
     expect(tacticRoleFocus('17095')).toEqual(['Holding','Ball-Winning'])
     expect(tacticRoleFocus('38275')).toEqual(['False 9','Build-Up'])
+  })
+
+  it('keeps rows from different careers isolated', () => {
+    const rows=[{career_id:'career-a',team_id:'1'},{career_id:'career-b',team_id:'1'},{team_id:'2'}]
+    expect(careerProfileId(rows[0])).toBe('career-a')
+    expect(rowsForCareer(rows,'career-a')).toEqual([rows[0]])
+    expect(rowsForCareer(rows,'team-2')).toEqual([rows[2]])
   })
 
   it('uses match_id + player_id idempotently and accepts delayed rows', () => {

@@ -3,7 +3,7 @@ require 'imports/other/helpers'
 
 -- Auto-runs after a Career save loads and refreshes on day changes and before matches.
 -- This script only reads FC 26 data and overwrites the two snapshot files.
-local SCHEMA_VERSION = 1
+local SCHEMA_VERSION = 2
 local EXPORT_DIR = string.format('%s\\FC26 Career Analyst\\Live Editor', os.getenv('APPDATA'))
 local SQUAD_FILE = EXPORT_DIR .. '\\fc26_squad_snapshot.csv'
 local TACTICS_FILE = EXPORT_DIR .. '\\fc26_tactics_snapshot.csv'
@@ -32,6 +32,16 @@ local function write_csv(path, headers, rows)
     for _, row in ipairs(rows) do file:write(table.concat(row, ',') .. '\n') end
     file:close()
 end
+local function career_id(team_id)
+    local user = (GetDBTableRows('career_users') or {})[1] or {}
+    local calendar = (GetDBTableRows('career_calendar') or {})[1] or {}
+    local user_id = number(value(user, 'userid'))
+    local start_date = number(value(calendar, 'startdate'))
+    if start_date == 0 then start_date = number(value(calendar, 'setupdate')) end
+    -- ponytail: team fallback only when this Live Editor build hides save identity fields; add manual profiles if identical-team saves collide.
+    if user_id == 0 or start_date == 0 then return string.format('team-%d', team_id) end
+    return string.format('manager-%d-start-%d', user_id, start_date)
+end
 
 local function export_snapshot()
 local team_id = GetUserTeamID()
@@ -41,6 +51,7 @@ local contracts = index('career_playercontract', 'playerid', function(row) retur
 local players = index('players', 'playerid')
 local date = GetCurrentDate()
 local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
+local profile_id = career_id(team_id)
 
 local attributes = {
     'overallrating','potential','acceleration','sprintspeed','finishing','shotpower','longshots','positioning',
@@ -50,7 +61,7 @@ local attributes = {
     'gkdiving','gkhandling','gkkicking','gkreflexes','gkpositioning'
 }
 local squad_headers = {
-    'schema_version','captured_at','career_date','team_id','team','player_id','player','age','jersey_number',
+    'schema_version','career_id','captured_at','career_date','team_id','team','player_id','player','age','jersey_number',
     'position','preferred_position_1','preferred_position_2','preferred_position_3','preferred_position_4',
     'preferred_position_5','preferred_position_6','preferred_position_7','overall','potential','injury','suspension',
     'form','morale','fitness','sharpness','contract_end','contract_months','wage','squad_role',
@@ -65,7 +76,7 @@ for player_id, link in pairs(links) do
     local birth = DATE:new()
     birth:FromGregorianDays(number(value(player, 'birthdate')))
     local row = {
-        SCHEMA_VERSION, csv(captured_at), csv(string.format('%04d-%02d-%02d', date.year, date.month, date.day)),
+        SCHEMA_VERSION, csv(profile_id), csv(captured_at), csv(string.format('%04d-%02d-%02d', date.year, date.month, date.day)),
         team_id, csv(GetTeamName(team_id)), player_id, csv(GetPlayerName(player_id)), CalculatePlayerAge(date, birth),
         number(value(link, 'jerseynumber')), number(value(link, 'position')),
         number(value(player, 'preferredposition1')), number(value(player, 'preferredposition2')), number(value(player, 'preferredposition3')),
@@ -80,11 +91,11 @@ for player_id, link in pairs(links) do
     for _, attribute in ipairs(attributes) do table.insert(row, number(value(player, attribute))) end
     table.insert(squad_rows, row)
 end
-table.sort(squad_rows, function(a, b) return number(a[6]) < number(b[6]) end)
+table.sort(squad_rows, function(a, b) return number(a[7]) < number(b[7]) end)
 write_csv(SQUAD_FILE, squad_headers, squad_rows)
 
 local tactic_headers = {
-    'schema_version','captured_at','team_id','formation_id','formation_name','slot','position','x','y','role','focus',
+    'schema_version','career_id','captured_at','team_id','formation_id','formation_name','slot','position','x','y','role','focus',
     'assigned_player_id','build_up_speed','build_up_passing','build_up_dribbling','chance_passing','chance_crossing',
     'chance_shooting','defensive_pressure','defensive_width','defensive_line'
 }
@@ -101,7 +112,7 @@ for _, formation in ipairs(formations) do
         for slot = 0, 10 do
             local position = number(value(formation, 'position' .. slot))
             table.insert(tactic_rows, {
-                SCHEMA_VERSION, csv(captured_at), team_id, number(value(formation, 'formationid')),
+                SCHEMA_VERSION, csv(profile_id), csv(captured_at), team_id, number(value(formation, 'formationid')),
                 csv(value(formation, 'formationname')), slot, position,
                 number(value(formation, 'offset' .. slot .. 'x')), number(value(formation, 'offset' .. slot .. 'y')),
                 number(value(formation, 'pos' .. slot .. 'role')), csv(''), assigned_players[position] or csv(''),

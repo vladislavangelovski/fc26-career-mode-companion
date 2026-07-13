@@ -3,7 +3,7 @@ require 'imports/other/helpers'
 
 -- Auto-runs with Live Editor; one row per player appearance is appended after every user match.
 local OUTPUT_FILE = string.format('%s\\FC26 Career Analyst\\Live Editor\\fc26_match_telemetry.csv', os.getenv('APPDATA'))
-local SCHEMA_VERSION = 1
+local SCHEMA_VERSION = 2
 
 local baseline
 local baseline_date
@@ -62,6 +62,17 @@ local function get_managed_team_id()
     return managed_team_id
 end
 
+local function career_id()
+    local user = (GetDBTableRows('career_users') or {})[1] or {}
+    local calendar = (GetDBTableRows('career_calendar') or {})[1] or {}
+    local user_id = number(value(user, 'userid'))
+    local start_date = number(value(calendar, 'startdate'))
+    if start_date == 0 then start_date = number(value(calendar, 'setupdate')) end
+    -- ponytail: team fallback only when this Live Editor build hides save identity fields; add manual profiles if identical-team saves collide.
+    if user_id == 0 or start_date == 0 then return string.format('team-%d', get_managed_team_id() or 0) end
+    return string.format('manager-%d-start-%d', user_id, start_date)
+end
+
 local function take_snapshot()
     local result = {}
     local team_id = get_managed_team_id()
@@ -106,7 +117,7 @@ local function last_match_rows()
 end
 
 local headers = {
-    'schema_version', 'match_id', 'fixture_id', 'captured_at', 'career_date', 'completion_event',
+    'schema_version', 'career_id', 'match_id', 'fixture_id', 'captured_at', 'career_date', 'completion_event',
     'team_id', 'opponent_id', 'opponent', 'home_away', 'team_score', 'opponent_score',
     'competition_id', 'competition', 'player_id', 'player', 'minutes', 'played_position',
     'lineup_status', 'lineup_status_source', 'current_ovr', 'appearance', 'rating', 'goals', 'assists', 'yellow_cards',
@@ -117,7 +128,14 @@ local headers = {
 local function open_output()
     local existing = io.open(OUTPUT_FILE, 'r')
     local needs_header = not existing
-    if existing then existing:close() end
+    if existing then
+        local current_header = existing:read('*l')
+        existing:close()
+        if current_header ~= table.concat(headers, ',') then
+            os.rename(OUTPUT_FILE, OUTPUT_FILE .. '.legacy-' .. os.time() .. '.csv')
+            needs_header = true
+        end
+    end
 
     local file, err = io.open(OUTPUT_FILE, 'a')
     assert(file, string.format('Could not open %s: %s', OUTPUT_FILE, tostring(err)))
@@ -142,6 +160,7 @@ local function write_match(event_id)
     local date = baseline_date or career_date()
     local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
     local fixture = pending_fixture or find_fixture()
+    local profile_id = career_id()
     local match_id = fixture.fixture_id > 0 and string.format('fixture-%d', fixture.fixture_id)
         or string.format('%s-team-%d-comp-%d', date, get_managed_team_id(), fixture.competition_id)
     local history = last_match_rows()
@@ -168,7 +187,7 @@ local function write_match(event_id)
             local played_position = number(value(last, 'position'))
             local lineup_status = minutes > 45 and 'starter' or 'substitute'
             local row = {
-                SCHEMA_VERSION, csv(match_id), fixture.fixture_id, csv(captured_at), csv(date), event_id,
+                SCHEMA_VERSION, csv(profile_id), csv(match_id), fixture.fixture_id, csv(captured_at), csv(date), event_id,
                 get_managed_team_id(), fixture.opponent_id, csv(fixture.opponent_id > 0 and GetTeamName(fixture.opponent_id) or ''),
                 csv(fixture.home and 'home' or 'away'), team_score, opponent_score,
                 competition_id, csv(GetCompetitionNameByObjID(competition_id)),
