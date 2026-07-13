@@ -8,7 +8,7 @@ export function classifyOCR(text: string): MatchScreenshot['screenType'] {
 }
 
 export function extractOCRValues(text: string, confidence: number, screenshotId: string, playerId?: string, scope: OCRValue['scope'] = playerId ? 'player' : 'team'): OCRValue[] {
-  const aliases: Record<string, string> = { rating: 'rating', goals: 'goals', assists: 'assists', shots: 'shots', 'shots on target': 'shotsOnTarget', passes: 'passes', 'pass accuracy': 'passAccuracy', possession: 'possession', tackles: 'tacklesWon', interceptions: 'interceptions', saves: 'saves', 'distance covered': 'distanceCovered', 'expected goals': 'expectedGoals', crosses: 'crossesCompleted' }
+  const aliases: Record<string, string> = { rating: 'rating', goals: 'goals', assists: 'assists', shots: 'shots', 'shots on target': 'shotsOnTarget', passes: 'passes', 'pass accuracy': 'passAccuracy', possession: 'possession', tackles: 'tacklesWon', interceptions: 'interceptions', saves: 'saves', 'distance covered': 'distanceCovered', 'expected goals against': 'expectedGoalsAgainst', xga: 'expectedGoalsAgainst', 'expected goals': 'expectedGoals', crosses: 'crossesCompleted' }
   const results: OCRValue[] = []
   for (const line of text.split(/\r?\n/).map(value => value.trim()).filter(Boolean)) {
     for (const [label, field] of Object.entries(aliases).sort(([a], [b]) => b.length - a.length)) {
@@ -18,6 +18,18 @@ export function extractOCRValues(text: string, confidence: number, screenshotId:
     }
   }
   return results
+}
+
+export function extractExpectedGoalsPair(text:string,confidence:number,screenshotId:string,teamOnLeft?:boolean):OCRValue[] {
+  if(teamOnLeft===undefined)return []
+  for(const line of text.split(/\r?\n/).map(value=>value.trim())) {
+    const pair=line.match(/(-?\d+(?:[.,]\d+)?)\s+(?:expected\s+goals|xg)\s+(-?\d+(?:[.,]\d+)?)/i)??line.match(/(?:expected\s+goals|xg)\s+(-?\d+(?:[.,]\d+)?)\s+(-?\d+(?:[.,]\d+)?)/i)
+    if(!pair)continue
+    const values=[Number(pair[1].replace(',','.')),Number(pair[2].replace(',','.'))]
+    const team=values[teamOnLeft?0:1],against=values[teamOnLeft?1:0]
+    return [{id:`${screenshotId}:xg`,screenshotId,scope:'team',field:'expectedGoals',value:team,confidence:Math.round(confidence),included:true},{id:`${screenshotId}:xga`,screenshotId,scope:'team',field:'expectedGoalsAgainst',value:against,confidence:Math.round(confidence),included:true}]
+  }
+  return []
 }
 
 export function applyConfirmedOCR(match: Match, values: OCRValue[]) {

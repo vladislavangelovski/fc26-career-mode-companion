@@ -15,6 +15,7 @@ function createWindow() {
     title: 'FC 26 Career Analyst',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
+  window.webContents.setZoomFactor(1.2)
   void window.loadFile(path.join(__dirname, '../../dist/index.html'))
   window.on('closed', () => { window = null })
 }

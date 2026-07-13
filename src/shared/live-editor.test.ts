@@ -10,5 +10,6 @@ describe('Live Editor autorun safety', () => {
     expect(script).toContain("'schema_version', 'career_id', 'match_id'")
     expect(script).toContain("OUTPUT_FILE .. '.legacy-'")
     expect(script.trim().endsWith("AddEventHandler('post__CareerModeEvent', after_match_autorun)")).toBe(true)
+    expect(readFileSync('live_editor/career_snapshot.lua','utf8')).toContain('fc26_fixtures_snapshot.csv')
   })
 })

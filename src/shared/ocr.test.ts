@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyConfirmedOCR, classifyOCR, extractOCRValues } from './ocr'
+import { applyConfirmedOCR, classifyOCR, extractExpectedGoalsPair, extractOCRValues } from './ocr'
 import type { Match } from './types'
 
 describe('OCR template parsing', () => {
@@ -22,5 +22,9 @@ describe('OCR template parsing', () => {
     expect(match.teamStatistics.expectedGoals).toBe(1.9);expect(match.appearances[0].rating).toBe(8.4)
     applyConfirmedOCR(match,values.map(value=>({...value,included:false})))
     expect(match.teamStatistics.expectedGoals).toBeUndefined();expect(match.appearances[0].rating).toBe(7)
+  })
+  it('extracts managed-team xG and xGA from both sides of the summary row',()=>{
+    expect(extractExpectedGoalsPair('1.8 Expected Goals 0.9',98,'home',true).map(value=>[value.field,value.value])).toEqual([['expectedGoals',1.8],['expectedGoalsAgainst',.9]])
+    expect(extractExpectedGoalsPair('Expected Goals 1.8 0.9',98,'away',false).map(value=>[value.field,value.value])).toEqual([['expectedGoals',.9],['expectedGoalsAgainst',1.8]])
   })
 })

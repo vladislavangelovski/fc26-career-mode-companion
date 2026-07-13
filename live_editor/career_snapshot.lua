@@ -7,6 +7,7 @@ local SCHEMA_VERSION = 2
 local EXPORT_DIR = string.format('%s\\FC26 Career Analyst\\Live Editor', os.getenv('APPDATA'))
 local SQUAD_FILE = EXPORT_DIR .. '\\fc26_squad_snapshot.csv'
 local TACTICS_FILE = EXPORT_DIR .. '\\fc26_tactics_snapshot.csv'
+local FIXTURES_FILE = EXPORT_DIR .. '\\fc26_fixtures_snapshot.csv'
 
 local function number(v) return tonumber(v) or 0 end
 local function value(row, field)
@@ -93,6 +94,26 @@ for player_id, link in pairs(links) do
 end
 table.sort(squad_rows, function(a, b) return number(a[7]) < number(b[7]) end)
 write_csv(SQUAD_FILE, squad_headers, squad_rows)
+
+local fixture_headers = {'schema_version','career_id','fixture_id','career_date','team_id','opponent_id','opponent','home_away','competition_id','competition'}
+local fixture_rows = {}
+for _, fixture in ipairs(GetDBTableRows('fixtures') or {}) do
+    local home_id = number(value(fixture, 'hometeamid'))
+    local away_id = number(value(fixture, 'awayteamid'))
+    if home_id == team_id or away_id == team_id then
+        local opponent_id = home_id == team_id and away_id or home_id
+        local competition_id = number(value(fixture, 'competitionid'))
+        local fixture_date = DATE:new()
+        fixture_date:FromGregorianDays(number(value(fixture, 'fixturedate')))
+        table.insert(fixture_rows, {
+            SCHEMA_VERSION, csv(profile_id), number(value(fixture, 'fixtureid')),
+            csv(string.format('%04d-%02d-%02d', fixture_date.year, fixture_date.month, fixture_date.day)),
+            team_id, opponent_id, csv(GetTeamName(opponent_id)), csv(home_id == team_id and 'home' or 'away'),
+            competition_id, csv(GetCompetitionNameByObjID(competition_id))
+        })
+    end
+end
+write_csv(FIXTURES_FILE, fixture_headers, fixture_rows)
 
 local tactic_headers = {
     'schema_version','career_id','captured_at','team_id','formation_id','formation_name','slot','position','x','y','role','focus',

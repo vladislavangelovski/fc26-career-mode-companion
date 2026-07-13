@@ -30,5 +30,7 @@ describe('trend history', () => {
     const unconfirmed=fixture('one','2025-08-01');unconfirmed.teamStatistics.expectedGoals=1.8
     const confirmed=fixture('two','2025-08-08');confirmed.teamStatistics.expectedGoals=2.1;confirmed.ocr.status='confirmed'
     expect(matchSeries([unconfirmed,confirmed],'xg','xG',match=>teamMetric(match,'expectedGoals'),'Confirmed OCR').points.map(point=>point.value)).toEqual([undefined,2.1])
+    confirmed.teamStatistics.expectedGoalsAgainst=1.4
+    expect(teamMetric(confirmed,'expectedGoalDifference')).toBe(.7)
   })
 })

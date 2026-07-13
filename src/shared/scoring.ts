@@ -6,6 +6,8 @@ export const positionAdjustedScore = (player: Player, position: string, score: n
 }
 
 export const ROLE_LIBRARY: RoleDefinition[] = [
+  { id: 'gk', name: 'Goalkeeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 25, gkhandling: 20, gkpositioning: 20, gkdiving: 20, reactions: 10, composure: 5 }, performanceWeights: { saves: 60, rating: 40 } },
+  { id: 'gk-sweeper', name: 'Sweeper Keeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 20, gkhandling: 15, gkpositioning: 20, gkdiving: 15, gkkicking: 15, shortpassing: 10, composure: 5 }, performanceWeights: { saves: 50, passAccuracy: 20, rating: 30 } },
   { id: 'gk-ball', name: 'Ball-Playing Keeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 20, gkhandling: 18, gkpositioning: 18, shortpassing: 16, longpassing: 14, composure: 14 }, performanceWeights: { saves: 55, passAccuracy: 25, rating: 20 } },
   { id: 'wide-back', name: 'Wide Back', eligiblePositions: ['LB', 'RB'], attributeWeights: { stamina: 18, sprintspeed: 18, crossing: 16, standingtackle: 16, interceptions: 16, ballcontrol: 16 }, performanceWeights: { tacklesWon: 25, interceptions: 20, crossesCompleted: 20, passAccuracy: 15, rating: 20 } },
   { id: 'inverted-wingback', name: 'Inverted Wingback', eligiblePositions: ['LB', 'RB'], attributeWeights: { shortpassing: 20, vision: 18, ballcontrol: 18, composure: 16, interceptions: 14, stamina: 14 }, performanceWeights: { passAccuracy: 30, progressivePasses: 25, interceptions: 20, rating: 25 } },
@@ -39,9 +41,10 @@ function recentPerformance(appearances: Appearance[], weights: Record<string, nu
 
 export function scorePlayer(player: Player, role: RoleDefinition, appearances: Appearance[]): RoleScore {
   if (player.injured || player.suspended) return { playerId: player.id, roleId: role.id, total: 0, attributes: 0, performance: 0, condition: 0, familiarity: 0, sampleSize: 0, confidence: 'Basic', missingEvidence: [], excluded: player.injured ? 'Injured' : 'Suspended' }
-  const attributes = weighted(player.attributes, role.attributeWeights) || player.overall
+  const roleAttributes = weighted(player.attributes, role.attributeWeights)
+  const attributes = roleAttributes || player.overall
   const recent = recentPerformance(appearances.filter(a => a.playerId === player.id), role.performanceWeights)
-  const conditionParts = [[player.fitness,.4],[player.sharpness,.3],[player.morale,.2],[player.form,.1]] as [number | undefined, number][]
+  const conditionParts = [[player.fitness,.4],[player.sharpness,.3],[player.morale,.2],[player.form !== undefined && player.form > 5 ? player.form : undefined,.1]] as [number | undefined, number][]
   const exposedCondition = conditionParts.filter(([value]) => value !== undefined) as [number, number][]
   const conditionWeight = exposedCondition.reduce((sum, [, weight]) => sum + weight, 0)
   const condition = conditionWeight ? exposedCondition.reduce((sum, [value, weight]) => sum + value * weight, 0) / conditionWeight : 0
@@ -51,8 +54,8 @@ export function scorePlayer(player: Player, role: RoleDefinition, appearances: A
   if (conditionWeight) components.push([condition,15])
   if (familiarity !== undefined) components.push([familiarity,5])
   const total = components.reduce((sum, [score, weight]) => sum + score * weight, 0) / components.reduce((sum, [, weight]) => sum + weight, 0)
-  const missingEvidence = [player.fitness === undefined && 'fitness', player.sharpness === undefined && 'sharpness', player.morale === undefined && 'morale', !recent.sample && 'recent performance', !recent.detailed && 'detailed match metrics', familiarity === undefined && 'role familiarity'].filter(Boolean) as string[]
-  return { playerId: player.id, roleId: role.id, total: Math.round(total * 10) / 10, attributes: Math.round(attributes), performance: Math.round(recent.score), condition: Math.round(condition), familiarity: familiarity ?? 0, sampleSize: recent.sample, confidence: recent.detailed && recent.sample >= 3 && missingEvidence.length < 2 ? 'Strong' : recent.sample ? 'Standard' : 'Basic', missingEvidence }
+  const missingEvidence = [!roleAttributes && 'role attributes (using OVR)', player.fitness === undefined && 'fitness', player.sharpness === undefined && 'sharpness', player.morale === undefined && 'morale', (player.form === undefined || player.form <= 5) && 'form', !recent.sample && 'recent performance', !recent.detailed && 'detailed match metrics', familiarity === undefined && 'role familiarity'].filter(Boolean) as string[]
+  return { playerId: player.id, roleId: role.id, total: Math.round(total * 10) / 10, attributes: Math.round(attributes * 10) / 10, performance: Math.round(recent.score * 10) / 10, condition: Math.round(condition * 10) / 10, familiarity: familiarity ?? 0, sampleSize: recent.sample, confidence: recent.detailed && recent.sample >= 3 && missingEvidence.length < 2 ? 'Strong' : recent.sample ? 'Standard' : 'Basic', missingEvidence }
 }
 
 export function assignUniqueXI(players: Player[], slots: TacticSlot[], scores: (player: Player, slot: TacticSlot) => number) {
@@ -84,4 +87,12 @@ export function squadNeeds(players: Player[], slots: TacticSlot[]) {
     const targetDepth=starterCount+(code==='GK'?2:starterCount>1?2:1)
     return {code,label:label[code]??`${code} unit`,slot:unitSlots[0],starter:ranked[0],rotation:ranked[starterCount],depth:ranked.length,targetDepth,available:ranked.filter(player=>!player.injured&&!player.suspended).length,shortfall:Math.max(0,targetDepth-ranked.length)}
   }).filter(need=>need.shortfall>0).sort((a,b)=>b.shortfall/b.targetDepth-a.shortfall/a.targetDepth)
+}
+
+export function playerDecision({starter,fitGap,performance,sample,alternativeGap,depthSafe}:{starter:boolean;fitGap:number;performance:number;sample:number;alternativeGap:number;depthSafe:boolean}) {
+  if (sample < 3) return
+  if (!starter && depthSafe && sample >= 5 && fitGap < -5 && performance < 60) return 'Review sale'
+  if (starter && sample >= 3 && performance < 60) return 'Consider bench'
+  if (starter && alternativeGap >= 5) return 'Try alternative'
+  if (fitGap < -5) return 'System mismatch'
 }

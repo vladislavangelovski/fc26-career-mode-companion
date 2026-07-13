@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { assignUniqueXI, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './shared/scoring'
+import { assignUniqueXI, playerDecision, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './shared/scoring'
 import type { AnalystState, Match, OCRValue, Player, RoleDefinition, RoleScore, Tactic, TacticSlot } from './shared/types'
 import { currentSeason, filteredMatches, matchSeries, playerMetric, snapshotSeries, teamMetric, type TrendRange, type TrendSeries } from './shared/trends'
+import { roleFocuses } from './shared/telemetry'
 
 type View = 'Overview' | 'Squad' | 'Matches' | 'Trends' | 'Tactics' | 'Recommendations'
 const views: { name: View; key: string }[] = [{ name: 'Overview', key: '01' }, { name: 'Squad', key: '02' }, { name: 'Matches', key: '03' }, { name: 'Trends', key: '04' }, { name: 'Tactics', key: '05' }, { name: 'Recommendations', key: '06' }]
 const date = (value?: string) => value ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(new Date(value)) : '—'
 const result = (match: Match) => match.teamScore === undefined || match.opponentScore === undefined ? '—' : match.teamScore > match.opponentScore ? 'W' : match.teamScore < match.opponentScore ? 'L' : 'D'
 const ROLE_MODEL: Record<string, string> = {
-  Goalkeeper:'gk-ball','Ball-Playing Keeper':'gk-ball',Fullback:'wide-back',Falseback:'inverted-wingback',Wingback:'wide-back','Attacking Wingback':'wide-back','Inverted Wingback':'inverted-wingback',
+  Goalkeeper:'gk','Sweeper Keeper':'gk-sweeper','Ball-Playing Keeper':'gk-ball',Fullback:'wide-back',Falseback:'inverted-wingback',Wingback:'wide-back','Attacking Wingback':'wide-back','Inverted Wingback':'inverted-wingback',
   Defender:'centre-back',Stopper:'centre-back','Ball-Playing Defender':'centre-back','Wide Back':'centre-back',Holding:'playmaker','Centre Half':'centre-back','Deep-Lying Playmaker':'playmaker','Wide Half':'wide-back',
   'Box-to-Box':'box-crasher',Playmaker:'playmaker','Half-Winger':'playmaker',Winger:'versatile-forward','Wide Midfielder':'versatile-forward','Wide Playmaker':'playmaker','Inside Forward':'versatile-forward',
   'Shadow Striker':'box-crasher','Half Winger':'playmaker','Classic 10':'playmaker','False Winger':'playmaker','Advanced Forward':'versatile-forward',Poacher:'versatile-forward','False 9':'playmaker','Target Forward':'versatile-forward','Roaming Striker':'versatile-forward',
@@ -17,8 +18,8 @@ const roleFor = (slot: TacticSlot) => ROLE_LIBRARY.find(role => role.id === ROLE
 const FC_ROLES: Record<string, string[]> = {
   GK:['Goalkeeper','Sweeper Keeper','Ball-Playing Keeper'], RB:['Fullback','Falseback','Wingback','Attacking Wingback','Inverted Wingback'], LB:['Fullback','Falseback','Wingback','Attacking Wingback','Inverted Wingback'],
   CB:['Defender','Stopper','Ball-Playing Defender','Wide Back'], CDM:['Holding','Centre Half','Deep-Lying Playmaker','Wide Half','Box Crasher'], CM:['Box-to-Box','Holding','Deep-Lying Playmaker','Playmaker','Half-Winger'],
-  RM:['Winger','Wide Midfielder','Wide Playmaker','Inside Forward'], LM:['Winger','Wide Midfielder','Wide Playmaker','Inside Forward'], CAM:['Playmaker','Shadow Striker','Half Winger','Classic 10'],
-  RW:['Winger','Inside Forward','Wide Playmaker','False Winger'], LW:['Winger','Inside Forward','Wide Playmaker','False Winger'], ST:['Advanced Forward','Poacher','False 9','Target Forward','Roaming Striker'],
+  RM:['Winger','Wide Midfielder','Wide Playmaker','Inside Forward'], LM:['Winger','Wide Midfielder','Wide Playmaker','Inside Forward'], CAM:['Playmaker','Shadow Striker','Half-Winger','Classic 10'],
+  RW:['Winger','Inside Forward','Wide Playmaker'], LW:['Winger','Inside Forward','Wide Playmaker'], ST:['Advanced Forward','Poacher','False 9','Target Forward'],
 }
 const playerApps = (state: AnalystState, id: string) => state.matches.flatMap(match => match.appearances).filter(app => app.playerId === id)
 
@@ -44,11 +45,12 @@ function Pitch({ tactic, state, selected, onSelect, assignments }: { tactic: Tac
   </div>
 }
 
-function Meter({ value }: { value: number }) { return <span className="meter"><i style={{ width: `${Math.max(0, Math.min(100, value))}%` }}/><b>{Math.round(value)}</b></span> }
+function Meter({ value }: { value: number }) { return <span className="meter"><i style={{ width: `${Math.max(0, Math.min(100, value))}%` }}/><b>{Number.isInteger(value)?value:value.toFixed(1)}</b></span> }
 function Empty({ children }: { children: string }) { return <div className="empty"><span>⌁</span>{children}</div> }
 
 const TEAM_PRESETS = {
   attacking: [['goals', 'Goals', 'Telemetry'], ['expectedGoals', 'xG', 'Confirmed OCR']],
+  expected: [['expectedGoals','xG','Confirmed OCR'],['expectedGoalsAgainst','xGA','Confirmed OCR'],['expectedGoalDifference','xGD','Confirmed OCR']],
   shooting: [['shots', 'Shots', 'Confirmed OCR'], ['shotsOnTarget', 'Shots on target', 'Confirmed OCR']],
   control: [['possession', 'Possession %', 'Confirmed OCR'], ['passAccuracy', 'Pass accuracy %', 'Confirmed OCR']],
   defensive: [['tacklesWon', 'Tackles', 'Confirmed OCR'], ['interceptions', 'Interceptions', 'Confirmed OCR']],
@@ -213,15 +215,14 @@ function TacticsEditor({ state, onState, tactic }: { state: AnalystState; onStat
   const [selectedId, setSelected] = useState(draft.slots[0]?.id)
   const slot = draft.slots.find(item => item.id === selectedId)
   const updateSlot = (change: Partial<TacticSlot>) => setDraft({...draft, slots: draft.slots.map(item => item.id === selectedId ? {...item,...change}:item)})
-  const save = async () => onState(await window.fc26.updateTactic({...draft, corrected:true}))
+  const save = async () => onState(await window.fc26.updateTactic({...draft,corrected:true,slots:draft.slots.map(item=>({...item,focus:roleFocuses(item.position,item.role).includes(item.focus)?item.focus:roleFocuses(item.position,item.role)[0]}))}))
   return <><PageTitle eyebrow="Game model" title="Tactical laboratory" note={`${draft.formation} · imported values remain editable`} />
     <div className="tactics-layout"><section className="pitch-panel"><Pitch tactic={draft} state={state} selected={selectedId} onSelect={setSelected}/></section>
       <aside className="inspector"><p className="kicker">SELECTED SLOT</p><h2>{slot?.position || '—'}</h2>{slot && <>
         <label>Assigned player<select value={slot.playerId || ''} onChange={e => updateSlot({playerId:e.target.value || undefined})}><option value="">Unassigned</option>{state.players.map(p => <option value={p.id} key={p.id}>{p.name} · {p.overall}</option>)}</select></label>
-        <label>Position<select value={slot.position} onChange={e => updateSlot({position:e.target.value,role:FC_ROLES[e.target.value][0]})}>{['GK','LB','CB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST'].map(p => <option key={p}>{p}</option>)}</select></label>
-        <label>Role<select value={slot.role} onChange={e => updateSlot({role:e.target.value})}>{(FC_ROLES[slot.position] ?? [slot.role]).map(role => <option key={role}>{role}</option>)}</select></label>
-        <label>Focus<select value={slot.focus} onChange={e => updateSlot({focus:e.target.value})}>{['Balanced','Defend','Support','Build-Up','Attack','Versatile','Ball-Winning'].map(f => <option key={f}>{f}</option>)}</select></label>
-        <label>X position<input type="range" min="8" max="92" value={slot.x} onChange={e => updateSlot({x:Number(e.target.value)})}/></label><label>Y position<input type="range" min="8" max="92" value={slot.y} onChange={e => updateSlot({y:Number(e.target.value)})}/></label>
+        <label>Position<select value={slot.position} onChange={e => {const role=FC_ROLES[e.target.value][0];updateSlot({position:e.target.value,role,focus:roleFocuses(e.target.value,role)[0]})}}>{['GK','LB','CB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST'].map(p => <option key={p}>{p}</option>)}</select></label>
+        <label>Role<select value={slot.role} onChange={e => updateSlot({role:e.target.value,focus:roleFocuses(slot.position,e.target.value)[0]})}>{(FC_ROLES[slot.position] ?? [slot.role]).map(role => <option key={role}>{role}</option>)}</select></label>
+        <label>Focus<select value={roleFocuses(slot.position,slot.role).includes(slot.focus)?slot.focus:roleFocuses(slot.position,slot.role)[0]} onChange={e => updateSlot({focus:e.target.value})}>{roleFocuses(slot.position,slot.role).map(f => <option key={f}>{f}</option>)}</select></label>
         <SectionTitle title="Ranked candidates"/>{state.players.map(player => ({player,score:scoreFor(state,player,slot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score},index)=><Line key={player.id} left={`${index+1}. ${player.name}`} right={`${Math.round(score)}`}/>)}</>}
         <button className="primary save-tactic" onClick={save}>Save tactical corrections</button>
       </aside></div></>
@@ -232,21 +233,56 @@ function Recommendations({ state }: { state: AnalystState }) {
   const xi = tactic ? assignUniqueXI(state.players, tactic.slots, (player,slot) => scoreFor(state,player,slot)) : []
   const assignment = new Map(xi.map(item => [item.slotId,item.playerId]))
   const sample = evidenceMatches(state)
-  const needs = tactic ? squadNeeds(state.players,tactic.slots).slice(0,3) : []
+  const allNeeds = tactic ? squadNeeds(state.players,tactic.slots) : []
+  const needs = allNeeds.slice(0,3)
   const [selected, setSelected] = useState(xi[0]?.slotId)
   if (!tactic) return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note="Waiting for verified squad and tactics exports"/><section className="lower-band"><Empty>Recommendations stay disabled until a real tactic is imported.</Empty></section></>
+  const currentShortfall=allNeeds.reduce((sum,need)=>sum+need.shortfall,0)
+  const playerReviews=state.players.flatMap(player=>{
+    if(player.injured||player.suspended)return[]
+    const currentSlot=tactic.slots.find(slot=>slot.playerId===player.id)
+    const options=tactic.slots.map(slot=>({slot,score:scoreFor(state,player,slot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score)
+    const slot=currentSlot??options[0]?.slot
+    if(!slot)return[]
+    const score=scorePlayer(player,roleFor(slot),playerApps(state,player.id))
+    const alternative=currentSlot?state.players.filter(candidate=>candidate.id!==player.id).map(candidate=>({player:candidate,score:scoreFor(state,candidate,currentSlot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score)[0]:undefined
+    const action=playerDecision({starter:!!currentSlot,fitGap:score.attributes-player.overall,performance:score.performance,sample:score.sampleSize,alternativeGap:alternative?alternative.score-scoreFor(state,player,slot):0,depthSafe:squadNeeds(state.players.filter(candidate=>candidate.id!==player.id),tactic.slots).reduce((sum,need)=>sum+need.shortfall,0)<=currentShortfall})
+    if(!action)return[]
+    const reason=action==='Review sale'?`Role fit is ${(player.overall-score.attributes).toFixed(1)} below OVR and recent performance is ${score.performance}/100 across ${score.sampleSize} matches; depth remains covered.`:action==='Consider bench'?`Recent performance ${score.performance}/100 across ${score.sampleSize} matches${alternative?`; ${alternative.player.name} is the leading alternative.`:'.'}`:action==='Try alternative'?`${alternative!.player.name} scores ${Math.round(alternative!.score-scoreFor(state,player,slot))} points better for ${slot.position} ${slot.role}.`:`Best role fit is ${(player.overall-score.attributes).toFixed(1)} below the player's OVR at ${slot.position} ${slot.role}; consider retraining, loan or a different role.`
+    return[{action,title:player.name,reason}]
+  })
+  const seenRoles=new Set<string>()
+  const qualityNeeds=sample<3?[]:tactic.slots.flatMap(slot=>{
+    const key=`${slot.position}:${slot.role}`
+    if(seenRoles.has(key))return[];seenRoles.add(key)
+    const best=state.players.map(player=>positionAdjustedScore(player,slot.position,scorePlayer(player,roleFor(slot),playerApps(state,player.id)).attributes)).filter(Number.isFinite).sort((a,b)=>b-a)[0]
+    return best===undefined||best>=65?[]:[{action:'Recruit upgrade',title:`${slot.position} · ${slot.role}`,reason:`Best available attribute fit is ${best.toFixed(1)}/100. Scout a stronger match for this role.`}]
+  })
+  const decisions=[...playerReviews,...qualityNeeds].sort((a,b)=>['Review sale','Consider bench','Try alternative','System mismatch','Recruit upgrade'].indexOf(a.action)-['Review sale','Consider bench','Try alternative','System mismatch','Recruit upgrade'].indexOf(b.action)).slice(0,8)
   const selectedAssignment = xi.find(item => item.slotId === selected)
   const selectedSlot = tactic.slots.find(slot => slot.id === selected)
   const selectedPlayer = state.players.find(player => player.id === selectedAssignment?.playerId)
   const evidence = selectedPlayer && selectedSlot ? scorePlayer(selectedPlayer, roleFor(selectedSlot), playerApps(state,selectedPlayer.id)) : undefined
-  return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note={sample < 3 ? `Provisional role fit · ${sample}/3 matches` : 'Traceable role fit · unique-player assignment'}/>
-    <div className="recommend-layout"><section className="pitch-panel"><SectionTitle title="Strongest available XI"/><Pitch tactic={tactic} state={state} assignments={assignment} selected={selected} onSelect={setSelected}/></section>
-      <aside className="inspector"><p className="kicker">SELECTION EVIDENCE</p>{selectedPlayer && selectedSlot && evidence ? <><h2>{selectedPlayer.name}</h2><p className="muted">{selectedSlot.role} · {selectedSlot.focus} · {evidence.confidence} confidence</p><div className="hero-number"><span>{evidence.total}</span><small>ROLE FIT / 100</small></div><ScoreEvidence score={evidence}/></> : <Empty>Import squad data to generate the XI.</Empty>}</aside></div>
-    <section className="lower-band"><SectionTitle title="Priority squad needs" count={needs.length}/>{needs.length ? <><p className="muted">Structural depth only—not performance or tactical-role upgrades. The model allows rotation and versatile cover: 3 goalkeepers; one rotation option behind single starters; two rotation/cover options behind two-player units.</p><div className="needs-list">{needs.map(({code,label,starter,rotation,depth,targetDepth,available}) => <article key={code}><span>{code}</span><div><h3>{label}</h3><p>{depth}/{targetDepth} options · {available} available · Lead: {starter?.name??'None'} ({starter?.overall??0} OVR) · Rotation: {rotation?.name??'Missing'}{rotation?` (${rotation.overall} OVR)`:''}</p></div><strong>{depth}/{targetDepth}</strong></article>)}</div></> : <Line left="Starting, rotation and cover depth are present" right="Covered" tone="good"/>}</section>
+  return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note={sample < 3 ? `Learning your squad · ${sample}/3 matches` : 'Evidence-based role fit · unique-player assignment'}/>
+    <div className="recommend-layout"><section className="pitch-panel"><SectionTitle title={sample<3?'Provisional XI · not a lineup recommendation':'Strongest available XI'}/><Pitch tactic={tactic} state={state} assignments={assignment} selected={selected} onSelect={setSelected}/></section>
+      <aside className="inspector"><p className="kicker">SELECTION EVIDENCE</p>{selectedPlayer && selectedSlot && evidence ? <><h2>{selectedPlayer.name}</h2><p className="muted">{selectedSlot.role} · {selectedSlot.focus} · {evidence.sampleSize<3?`Early estimate · ${evidence.sampleSize}/3 matches`:'Match-supported estimate'}</p><div className="hero-number"><span>{evidence.total}</span><small>{evidence.sampleSize<3?'PROVISIONAL FIT':'ROLE FIT'} / 100</small></div><ScoreEvidence score={evidence}/></> : <Empty>Import squad data to generate the XI.</Empty>}</aside></div>
+    <section className="lower-band"><SectionTitle title="Squad decisions" count={decisions.length}/><p className="muted">The app observes at least 3 matches before judging system fit, lineup changes or quality upgrades. Sale review needs 5 poor matches plus safe depth.</p>{decisions.length?<div className="decision-list">{decisions.map((item,index)=><article key={`${item.action}:${item.title}:${index}`}><strong>{item.action}</strong><div><h3>{item.title}</h3><p>{item.reason}</p></div></article>)}</div>:<Line left={sample<3?`Learning period—play ${3-sample} more match${3-sample===1?'':'es'} before squad judgments.`:'No supported lineup, fit or sale concerns.'} right={sample<3?`${sample}/3`:'Stable'} tone="good"/>}</section>
+    <section className="lower-band"><SectionTitle title="Depth gaps" count={needs.length}/>{needs.length ? <><p className="muted">This section checks numbers only: starters, rotation and cover. It does not judge player quality.</p><div className="needs-list">{needs.map(({code,label,starter,rotation,depth,targetDepth,available}) => <article key={code}><span>{code}</span><div><h3>{label}</h3><p>{depth}/{targetDepth} options · {available} available · Lead: {starter?.name??'None'} ({starter?.overall??0} OVR) · Rotation: {rotation?.name??'Missing'}{rotation?` (${rotation.overall} OVR)`:''}</p></div><strong>{depth}/{targetDepth}</strong></article>)}</div></> : <Line left="Starting, rotation and cover depth are present" right="Covered" tone="good"/>}</section>
   </>
 }
 
-function ScoreEvidence({ score }: { score: RoleScore }) { return <div className="evidence"><div><span>Attributes · 55%</span><Meter value={score.attributes}/></div><div><span>Recent performance · 25%</span><Meter value={score.performance}/></div><div><span>Condition · 15%</span><Meter value={score.condition}/></div><div><span>Role familiarity · 5%</span><Meter value={score.familiarity}/></div><p>{score.sampleSize} qualifying appearances · {score.missingEvidence.length ? `Missing: ${score.missingEvidence.join(', ')}` : 'Full evidence available'}</p></div> }
+function ScoreEvidence({ score }: { score: RoleScore }) {
+  const missing=(name:string)=>score.missingEvidence.some(item=>item.startsWith(name))
+  const rows=[
+    ['Player attributes',55,score.attributes,missing('role attributes')?'Current OVR used because detailed attributes are unavailable':'FC attributes that matter for this role',true],
+    ['Recent matches',25,score.performance,`${score.sampleSize} recent match${score.sampleSize===1?'':'es'}, weighted by minutes${missing('detailed match metrics')?' · ratings only':''}`,score.sampleSize>0],
+    ['Condition',15,score.condition,'Fitness, sharpness, morale and form',!(missing('fitness')&&missing('sharpness')&&missing('morale')&&missing('form'))],
+    ['Role familiarity',5,score.familiarity,'FC familiarity with this exact role',!missing('role familiarity')],
+  ] as const
+  const used=rows.filter(row=>row[4]),weight=used.reduce((sum,row)=>sum+row[1],0)
+  const waiting=[!score.sampleSize&&'match appearances',missing('fitness')&&missing('sharpness')&&missing('morale')&&missing('form')&&'condition',missing('role familiarity')&&'role familiarity',score.sampleSize>0&&missing('detailed match metrics')&&'detailed match stats'].filter(Boolean)
+  return <div className="evidence"><p className="evidence-summary"><strong>{used.length===1?'Attributes-only estimate':'Current evidence used'}</strong>{used.length===1?'Match history and condition are not affecting this number yet.':'Only the sources listed below affect this number.'}</p>{used.map(([label,rowWeight,value,detail])=><div key={label}><span>{label} · {Math.round(rowWeight/weight*100)}% of this score</span><Meter value={value}/><small>{detail}</small></div>)}{waiting.length>0&&<div className="evidence-waiting"><span>Waiting for more data</span><p>{waiting.join(' · ')}</p></div>}</div>
+}
 function PageTitle({ eyebrow,title,note }: { eyebrow:string;title:string;note:string }) { return <header className="page-title"><div><p>{eyebrow}</p><h1>{title}</h1></div><span>{note}</span></header> }
 function SectionTitle({ title,count,action,onAction }: { title:string;count?:number;action?:string;onAction?:()=>void }) { return <div className="section-title"><h3>{title}{count !== undefined && <sup>{count}</sup>}</h3>{action && <button onClick={onAction}>{action} →</button>}</div> }
 function Line({ left,right,tone }: { left:string;right:string;tone?:string }) { return <div className={`line ${tone||''}`}><span>{left}</span><strong>{right}</strong></div> }

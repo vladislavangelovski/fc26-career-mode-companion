@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initialTestState } from './test-utils'
-import { careerProfileId, formationName, mergeTelemetry, positionName, rowsForCareer, tacticRoleFocus } from './telemetry'
+import { careerProfileId, formationName, mergeFixtures, mergeTelemetry, positionName, roleFocuses, rowsForCareer, tacticRoleFocus } from './telemetry'
 
 describe('telemetry merge', () => {
   it('recognizes the exported 4-1-2-1-2 wide shape', () => {
@@ -14,6 +14,10 @@ describe('telemetry merge', () => {
     expect(tacticRoleFocus('12865')).toEqual(['Ball-Playing Defender','Defend'])
     expect(tacticRoleFocus('17095')).toEqual(['Holding','Ball-Winning'])
     expect(tacticRoleFocus('38275')).toEqual(['False 9','Build-Up'])
+    expect(roleFocuses('GK','Goalkeeper')).toEqual(['Defend','Balanced'])
+    expect(roleFocuses('GK','Ball-Playing Keeper')).toEqual(['Build-Up'])
+    expect(roleFocuses('CM','Half-Winger')).toContain('Support')
+    expect(roleFocuses('CAM','Half-Winger')).toContain('Roaming')
   })
 
   it('keeps rows from different careers isolated', () => {
@@ -34,5 +38,11 @@ describe('telemetry merge', () => {
     expect(state.matches[0].appearances).toHaveLength(2)
     mergeTelemetry(state, [first])
     expect(state.matches[0].appearances[0].detailedMetrics.passAccuracy).toBe(92)
+  })
+
+  it('repairs a legacy opponent from the fixture snapshot', () => {
+    const state=initialTestState();state.matches=[{id:'legacy',seasonId:'2025/26',date:'2025-07-29',competition:'Cup',opponent:'Opponent not exposed',captureLevel:'telemetry',appearances:[],teamStatistics:{},screenshots:[],ocr:{status:'none',values:[]}}]
+    mergeFixtures(state,[{fixture_id:'40',career_date:'2025-07-29',competition:'Cup',opponent:'Málaga',home_away:'away'}])
+    expect(state.matches[0]).toMatchObject({fixtureId:'40',opponent:'Málaga',venue:'away'})
   })
 })

@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import path from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { n, parseCSV } from '../src/shared/csv'
-import { careerProfileId, formationName, groupBy, mergeTelemetry, positionName as position, rowsForCareer, tacticRoleFocus } from '../src/shared/telemetry'
+import { careerProfileId, formationName, groupBy, mergeFixtures, mergeTelemetry, positionName as position, rowsForCareer, tacticRoleFocus } from '../src/shared/telemetry'
 import type { Player, Tactic, TacticSlot } from '../src/shared/types'
 import { CareerStore } from './store'
 
@@ -14,7 +14,7 @@ export class Importer {
 
   start() {
     this.stop()
-    const files = Object.values(this.store.state.settings)
+    const files = [...Object.values(this.store.state.settings), path.join(path.dirname(this.store.state.settings.squadPath), 'fc26_fixtures_snapshot.csv')]
     for (const directory of new Set(files.map(file => path.dirname(file)))) {
       try {
         this.watchers.push(watch(directory, (_event, file) => {
@@ -42,6 +42,7 @@ export class Importer {
         else errors.push(`${path.basename(file)}: ${String(error)}`)
       }
     }
+    try { sources.push({ kind: 'fixturesPath', rows: parseCSV(await readFile(path.join(path.dirname(this.store.state.settings.squadPath), 'fc26_fixtures_snapshot.csv'), 'utf8')) }) } catch { /* optional until the updated script runs */ }
     const identityRow = sources.find(source => source.kind === 'squadPath')?.rows[0] ?? sources.find(source => source.kind === 'tacticsPath')?.rows[0] ?? sources.find(source => source.kind === 'telemetryPath')?.rows.at(-1)
     const profileId = careerProfileId(identityRow)
     if (profileId) await this.store.activate(profileId, identityRow?.team_id)
@@ -50,6 +51,7 @@ export class Importer {
       if (source.kind === 'telemetryPath') this.importTelemetry(rows)
       if (source.kind === 'squadPath') this.importSquad(rows)
       if (source.kind === 'tacticsPath') this.importTactics(rows)
+      if (source.kind === 'fixturesPath') mergeFixtures(this.store.state, rows)
     }
     this.store.state.sync = { status: errors.length ? 'error' : 'watching', lastImport: new Date().toISOString(), message: errors.join('\n') || (missing.length ? `Waiting for ${missing.join(', ')}` : 'Live Editor exports imported') }
     await this.store.save(); this.emit()

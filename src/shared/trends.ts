@@ -42,7 +42,13 @@ export function filteredMatches(state: AnalystState, range: TrendRange, competit
 }
 
 const confirmed = (match: Match) => match.ocr.status === 'confirmed'
-export const teamMetric = (match: Match, field: string) => field === 'goals' ? match.teamScore : field === 'goalsConceded' ? match.opponentScore : confirmed(match) ? match.teamStatistics[field] : undefined
+export const teamMetric = (match: Match, field: string) => {
+  if(field==='goals')return match.teamScore
+  if(field==='goalsConceded')return match.opponentScore
+  if(!confirmed(match))return undefined
+  if(field==='expectedGoalDifference'){const xg=match.teamStatistics.expectedGoals,xga=match.teamStatistics.expectedGoalsAgainst;return xg===undefined||xga===undefined?undefined:Math.round((xg-xga)*100)/100}
+  return match.teamStatistics[field]
+}
 export const playerMetric = (match: Match, appearance: Appearance, field: string) => {
   const automatic: Record<string, number | undefined> = { rating: appearance.rating, minutes: appearance.minutes, goals: appearance.goals, assists: appearance.assists, saves: appearance.saves, goalsConceded: appearance.goalsConceded }
   if (field in automatic) return automatic[field]

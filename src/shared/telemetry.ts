@@ -13,8 +13,32 @@ const TACTIC_ROLE_FOCUS: Record<string, [string, string]> = {
   '38213':['Target Forward','Attack'], '38275':['False 9','Build-Up'],
 }
 export const tacticRoleFocus = (value?: string) => TACTIC_ROLE_FOCUS[value ?? '']
+const ROLE_FOCUSES:Record<string,string[]> = {
+  'GK:Goalkeeper':['Defend','Balanced'],'GK:Sweeper Keeper':['Balanced','Build-Up'],'GK:Ball-Playing Keeper':['Build-Up'],
+  'FB:Fullback':['Defend','Balanced','Versatile'],'FB:Falseback':['Defend','Balanced'],'FB:Wingback':['Balanced','Support'],'FB:Attacking Wingback':['Support','Attack'],'FB:Inverted Wingback':['Build-Up','Attack'],
+  'CB:Defender':['Defend','Balanced'],'CB:Stopper':['Balanced','Aggressive'],'CB:Ball-Playing Defender':['Defend','Build-Up','Aggressive'],'CB:Wide Back':['Defend','Aggressive','Support'],
+  'CDM:Holding':['Defend','Roaming','Ball-Winning'],'CDM:Centre Half':['Defend'],'CDM:Deep-Lying Playmaker':['Defend','Roaming','Build-Up'],'CDM:Wide Half':['Defend','Build-Up'],'CDM:Box Crasher':['Balanced'],
+  'CM:Box-to-Box':['Balanced','Ball-Winning'],'CM:Holding':['Defend','Ball-Winning'],'CM:Deep-Lying Playmaker':['Defend','Build-Up'],'CM:Playmaker':['Attack','Roaming'],'CM:Half-Winger':['Balanced','Attack','Support'],
+  'WM:Winger':['Balanced','Attack'],'WM:Wide Midfielder':['Defend','Support','Build-Up'],'WM:Wide Playmaker':['Attack','Build-Up'],'WM:Inside Forward':['Balanced','Attack'],
+  'CAM:Playmaker':['Balanced','Roaming','Build-Up'],'CAM:Shadow Striker':['Attack'],'CAM:Half-Winger':['Balanced','Attack','Roaming'],'CAM:Classic 10':['Attack','Wide','Versatile'],
+  'WG:Winger':['Balanced','Attack','Versatile'],'WG:Inside Forward':['Balanced','Attack','Roaming'],'WG:Wide Playmaker':['Attack','Build-Up'],
+  'ST:Advanced Forward':['Attack','Support','Versatile'],'ST:Poacher':['Attack','Support','Versatile'],'ST:False 9':['Build-Up','Attack'],'ST:Target Forward':['Balanced','Attack','Wide'],
+}
+export const roleFocuses = (position:string,role:string) => ROLE_FOCUSES[`${({LB:'FB',RB:'FB',LM:'WM',RM:'WM',LW:'WG',RW:'WG'} as Record<string,string>)[position]??position}:${role}`] ?? ['Balanced']
 export const careerProfileId = (row?: Record<string, string>) => row?.career_id || (row?.team_id ? `team-${row.team_id}` : '')
 export const rowsForCareer = (rows: Record<string, string>[], profileId: string) => rows.filter(row => !careerProfileId(row) || careerProfileId(row) === profileId)
+
+export function mergeFixtures(state: AnalystState, rows: Record<string,string>[]) {
+  for (const match of state.matches) {
+    const fixture = rows.find(row => (match.fixtureId && row.fixture_id === match.fixtureId) || (row.career_date === match.date && (!match.competition || !row.competition || row.competition === match.competition)))
+    if (!fixture?.opponent) continue
+    match.fixtureId = fixture.fixture_id || match.fixtureId
+    match.opponent = fixture.opponent
+    match.venue = fixture.home_away === 'home' ? 'home' : fixture.home_away === 'away' ? 'away' : match.venue
+    match.competition ||= fixture.competition
+  }
+  return state
+}
 
 export function formationName(positions: string[]) {
   const codes = positions.map(Number)

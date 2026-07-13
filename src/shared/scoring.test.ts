@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assignUniqueXI, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './scoring'
+import { assignUniqueXI, playerDecision, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './scoring'
 import type { Player, TacticSlot } from './types'
 
 const player = (id: string, injured = false): Player => ({ id, name:id, positions:['CM'], overall:75, attributes:{vision:80,shortpassing:82,longpassing:78,ballcontrol:80,composure:76,reactions:78}, familiarity:{playmaker:50}, injured, suspended:false, fitness:80,sharpness:70,morale:75,form:80,snapshots:[] })
@@ -13,9 +13,10 @@ describe('recommendation scoring', () => {
     expect(healthy.confidence).toBe('Basic')
   })
   it('does not turn missing telemetry into a low score', () => {
-    const sparse=player('sparse'); sparse.fitness=undefined; sparse.sharpness=undefined; sparse.morale=undefined; sparse.form=undefined; sparse.familiarity={}
+    const sparse=player('sparse'); sparse.fitness=undefined; sparse.sharpness=undefined; sparse.morale=undefined; sparse.form=3; sparse.familiarity={}
     const score=scorePlayer(sparse,ROLE_LIBRARY.at(-1)!,[])
     expect(Math.abs(score.total-score.attributes)).toBeLessThan(.51)
+    expect(score.missingEvidence).toContain('form')
     expect(score.missingEvidence).toContain('role familiarity')
   })
   it('finds the maximum unique assignment rather than a greedy lineup', () => {
@@ -44,5 +45,15 @@ describe('recommendation scoring', () => {
   it('does not recommend another goalkeeper when the unit already has depth', () => {
     const keepers=Array.from({length:5},(_,index)=>({...player(String(index)),positions:['GK']}))
     expect(squadNeeds(keepers,[{id:'gk',position:'GK'} as TacticSlot])).toHaveLength(0)
+  })
+  it('requires evidence before bench or sale advice', () => {
+    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:1,alternativeGap:0,depthSafe:true})).toBeUndefined()
+    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:3,alternativeGap:0,depthSafe:true})).toBe('Consider bench')
+    expect(playerDecision({starter:false,fitGap:-8,performance:55,sample:5,alternativeGap:0,depthSafe:true})).toBe('Review sale')
+  })
+  it('scores a normal goalkeeper as a goalkeeper, not a passer', () => {
+    const role=ROLE_LIBRARY.find(item=>item.id==='gk')!
+    expect(role.attributeWeights.gkdiving).toBeGreaterThan(0)
+    expect(role.attributeWeights.shortpassing).toBeUndefined()
   })
 })
