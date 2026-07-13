@@ -1,5 +1,10 @@
 import type { Appearance, Player, RoleDefinition, RoleScore, TacticSlot } from './types'
 
+export const positionAdjustedScore = (player: Player, position: string, score: number) => {
+  const index=player.positions.indexOf(position)
+  return index<0 ? Number.NEGATIVE_INFINITY : score-Math.min(index,3)*4
+}
+
 export const ROLE_LIBRARY: RoleDefinition[] = [
   { id: 'gk-ball', name: 'Ball-Playing Keeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 20, gkhandling: 18, gkpositioning: 18, shortpassing: 16, longpassing: 14, composure: 14 }, performanceWeights: { saves: 55, passAccuracy: 25, rating: 20 } },
   { id: 'wide-back', name: 'Wide Back', eligiblePositions: ['LB', 'RB'], attributeWeights: { stamina: 18, sprintspeed: 18, crossing: 16, standingtackle: 16, interceptions: 16, ballcontrol: 16 }, performanceWeights: { tacklesWon: 25, interceptions: 20, crossesCompleted: 20, passAccuracy: 15, rating: 20 } },
@@ -58,11 +63,25 @@ export function assignUniqueXI(players: Player[], slots: TacticSlot[], scores: (
     for (const [mask, state] of states) for (let index = 0; index < slots.length; index++) {
       if (mask & (1 << index)) continue
       const value = scores(player, slots[index])
+      if (!Number.isFinite(value)) continue
       const nextMask = mask | (1 << index)
       const candidate = { score: state.score + value, assignments: [...state.assignments, { slotId: slots[index].id, playerId: player.id, score: value }] }
       if ((next.get(nextMask)?.score ?? -1) < candidate.score) next.set(nextMask, candidate)
     }
     states = next
   }
-  return states.get((1 << slots.length) - 1)?.assignments ?? []
+  return states.get((1 << slots.length) - 1)?.assignments ?? [...states.values()].sort((a,b)=>b.assignments.length-a.assignments.length||b.score-a.score)[0].assignments
+}
+
+export function squadNeeds(players: Player[], slots: TacticSlot[]) {
+  const unit = (position:string) => ({LB:'FB',RB:'FB',LM:'WM',RM:'WM',LW:'WG',RW:'WG'}[position] ?? position)
+  const label:Record<string,string>={GK:'Goalkeeper unit',FB:'Fullback unit',CB:'Centre-back unit',WM:'Wide-midfield unit',WG:'Winger unit',CDM:'Defensive-midfield unit',CM:'Central-midfield unit',CAM:'Attacking-midfield unit',ST:'Striker unit'}
+  return [...new Set(slots.map(slot=>unit(slot.position)))].map(code=>{
+    const unitSlots=slots.filter(slot=>unit(slot.position)===code)
+    const positions=[...new Set(unitSlots.map(slot=>slot.position))]
+    const ranked=players.filter(player=>player.positions.some(position=>positions.includes(position))).sort((a,b)=>b.overall-a.overall)
+    const starterCount=unitSlots.length
+    const targetDepth=starterCount+(code==='GK'?2:starterCount>1?2:1)
+    return {code,label:label[code]??`${code} unit`,slot:unitSlots[0],starter:ranked[0],rotation:ranked[starterCount],depth:ranked.length,targetDepth,available:ranked.filter(player=>!player.injured&&!player.suspended).length,shortfall:Math.max(0,targetDepth-ranked.length)}
+  }).filter(need=>need.shortfall>0).sort((a,b)=>b.shortfall/b.targetDepth-a.shortfall/a.targetDepth)
 }

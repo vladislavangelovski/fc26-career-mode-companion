@@ -3,7 +3,7 @@ import type { AnalystState, Appearance } from './types'
 import { seasonId } from './trends'
 
 const POSITION_NAMES: Record<string, string> = { '0':'GK','1':'GK','2':'RB','3':'RB','4':'CB','5':'CB','6':'CB','7':'LB','8':'LB','9':'CDM','10':'CDM','11':'CDM','12':'RM','13':'CM','14':'CM','15':'CM','16':'LM','17':'CAM','18':'CAM','19':'CAM','20':'RW','21':'ST','22':'LW','23':'RW','24':'ST','25':'ST','26':'ST','27':'LW' }
-export const positionName = (value?: string) => POSITION_NAMES[value ?? ''] ?? value ?? ''
+export const positionName = (value?: string) => POSITION_NAMES[value ?? ''] ?? (/^-?\d+$/.test(value ?? '') ? '' : value ?? '')
 
 const TACTIC_ROLE_FOCUS: Record<string, [string, string]> = {
   '4162':['Goalkeeper','Balanced'], '8386':['Fullback','Balanced'],

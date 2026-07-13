@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { assignUniqueXI, ROLE_LIBRARY, scorePlayer } from './shared/scoring'
+import { assignUniqueXI, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './shared/scoring'
 import type { AnalystState, Match, OCRValue, Player, RoleDefinition, RoleScore, Tactic, TacticSlot } from './shared/types'
 import { currentSeason, filteredMatches, matchSeries, playerMetric, snapshotSeries, teamMetric, type TrendRange, type TrendSeries } from './shared/trends'
 
@@ -23,8 +23,7 @@ const FC_ROLES: Record<string, string[]> = {
 const playerApps = (state: AnalystState, id: string) => state.matches.flatMap(match => match.appearances).filter(app => app.playerId === id)
 
 function scoreFor(state: AnalystState, player: Player, slot: TacticSlot) {
-  const eligible = player.positions.includes(slot.position) || roleFor(slot).eligiblePositions.some(pos => player.positions.includes(pos))
-  return eligible ? scorePlayer(player, roleFor(slot), playerApps(state, player.id)).total : Math.max(0, scorePlayer(player, roleFor(slot), playerApps(state, player.id)).total - 24)
+  return positionAdjustedScore(player,slot.position,scorePlayer(player,roleFor(slot),playerApps(state,player.id)).total)
 }
 
 const activeTactic = (state: AnalystState) => state.tactics[0]
@@ -34,7 +33,7 @@ function Pitch({ tactic, state, selected, onSelect, assignments }: { tactic: Tac
   return <div className="pitch" aria-label={`${tactic.formation} tactical pitch`}>
     <div className="pitch-markings"><i/><i/><i/></div>
     {tactic.slots.map((slot, index) => {
-      const playerId = assignments?.get(slot.id) ?? slot.playerId
+      const playerId = assignments ? assignments.get(slot.id) : slot.playerId
       const player = state.players.find(item => item.id === playerId)
       const x = Math.max(5, Math.min(95, slot.x))
       const y = Math.max(5, Math.min(88, slot.y))
@@ -223,7 +222,7 @@ function TacticsEditor({ state, onState, tactic }: { state: AnalystState; onStat
         <label>Role<select value={slot.role} onChange={e => updateSlot({role:e.target.value})}>{(FC_ROLES[slot.position] ?? [slot.role]).map(role => <option key={role}>{role}</option>)}</select></label>
         <label>Focus<select value={slot.focus} onChange={e => updateSlot({focus:e.target.value})}>{['Balanced','Defend','Support','Build-Up','Attack','Versatile','Ball-Winning'].map(f => <option key={f}>{f}</option>)}</select></label>
         <label>X position<input type="range" min="8" max="92" value={slot.x} onChange={e => updateSlot({x:Number(e.target.value)})}/></label><label>Y position<input type="range" min="8" max="92" value={slot.y} onChange={e => updateSlot({y:Number(e.target.value)})}/></label>
-        <SectionTitle title="Ranked candidates"/>{state.players.map(player => ({player,score:scoreFor(state,player,slot)})).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score},index)=><Line key={player.id} left={`${index+1}. ${player.name}`} right={`${Math.round(score)}`}/>)}</>}
+        <SectionTitle title="Ranked candidates"/>{state.players.map(player => ({player,score:scoreFor(state,player,slot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score},index)=><Line key={player.id} left={`${index+1}. ${player.name}`} right={`${Math.round(score)}`}/>)}</>}
         <button className="primary save-tactic" onClick={save}>Save tactical corrections</button>
       </aside></div></>
 }
@@ -233,7 +232,7 @@ function Recommendations({ state }: { state: AnalystState }) {
   const xi = tactic ? assignUniqueXI(state.players, tactic.slots, (player,slot) => scoreFor(state,player,slot)) : []
   const assignment = new Map(xi.map(item => [item.slotId,item.playerId]))
   const sample = evidenceMatches(state)
-  const needs = tactic && sample >= 3 ? tactic.slots.map(slot => { const ranked = state.players.map(player => ({player, score:scoreFor(state,player,slot)})).sort((a,b)=>b.score-a.score); const starter=ranked[0],backup=ranked[1]; return {slot,starter,backup,urgency:Math.max(0,70-(starter?.score ?? 0))+Math.max(0,65-(backup?.score ?? 0))+((starter?.player.age ?? 0)>=32?5:0)} }).filter(item => item.urgency > 0).sort((a,b)=>b.urgency-a.urgency).slice(0,3) : []
+  const needs = tactic ? squadNeeds(state.players,tactic.slots).slice(0,3) : []
   const [selected, setSelected] = useState(xi[0]?.slotId)
   if (!tactic) return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note="Waiting for verified squad and tactics exports"/><section className="lower-band"><Empty>Recommendations stay disabled until a real tactic is imported.</Empty></section></>
   const selectedAssignment = xi.find(item => item.slotId === selected)
@@ -243,7 +242,7 @@ function Recommendations({ state }: { state: AnalystState }) {
   return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note={sample < 3 ? `Provisional role fit · ${sample}/3 matches` : 'Traceable role fit · unique-player assignment'}/>
     <div className="recommend-layout"><section className="pitch-panel"><SectionTitle title="Strongest available XI"/><Pitch tactic={tactic} state={state} assignments={assignment} selected={selected} onSelect={setSelected}/></section>
       <aside className="inspector"><p className="kicker">SELECTION EVIDENCE</p>{selectedPlayer && selectedSlot && evidence ? <><h2>{selectedPlayer.name}</h2><p className="muted">{selectedSlot.role} · {selectedSlot.focus} · {evidence.confidence} confidence</p><div className="hero-number"><span>{evidence.total}</span><small>ROLE FIT / 100</small></div><ScoreEvidence score={evidence}/></> : <Empty>Import squad data to generate the XI.</Empty>}</aside></div>
-    <section className="lower-band"><SectionTitle title="Priority squad needs" count={needs.length}/>{sample < 3 ? <Empty>{`Needs unlock after 3 imported matches (${sample}/3). Current role-fit rankings are provisional, not player OVR.`}</Empty> : needs.length ? <><p className="muted">Top three evidence-backed gaps. Scores are role fit, not player OVR; targets are 70 starter and 65 backup.</p><div className="needs-list">{needs.map(({slot,starter,backup}) => <article key={slot.id}><span>{slot.position}</span><div><h3>{slot.role}</h3><p>{slot.focus} focus · Best: {starter?.player.name ?? 'None'} ({Math.round(starter?.score ?? 0)}). Backup: {backup?.player.name ?? 'None'} ({Math.round(backup?.score ?? 0)}).</p></div><strong>{Math.round(starter?.score ?? 0)}</strong></article>)}</div></> : <Line left="No evidence-backed gaps in the current system" right="Covered" tone="good"/>}</section>
+    <section className="lower-band"><SectionTitle title="Priority squad needs" count={needs.length}/>{needs.length ? <><p className="muted">Structural depth only—not performance or tactical-role upgrades. The model allows rotation and versatile cover: 3 goalkeepers; one rotation option behind single starters; two rotation/cover options behind two-player units.</p><div className="needs-list">{needs.map(({code,label,starter,rotation,depth,targetDepth,available}) => <article key={code}><span>{code}</span><div><h3>{label}</h3><p>{depth}/{targetDepth} options · {available} available · Lead: {starter?.name??'None'} ({starter?.overall??0} OVR) · Rotation: {rotation?.name??'Missing'}{rotation?` (${rotation.overall} OVR)`:''}</p></div><strong>{depth}/{targetDepth}</strong></article>)}</div></> : <Line left="Starting, rotation and cover depth are present" right="Covered" tone="good"/>}</section>
   </>
 }
 

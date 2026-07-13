@@ -9,6 +9,7 @@ describe('telemetry merge', () => {
 
   it('decodes FC 26 positions, roles, and focuses without generic fallbacks', () => {
     expect(['4','5','6'].map(positionName)).toEqual(['CB','CB','CB'])
+    expect(['28','29','-1'].map(positionName)).toEqual(['','',''])
     expect(tacticRoleFocus('12737')).toEqual(['Defender','Defend'])
     expect(tacticRoleFocus('12865')).toEqual(['Ball-Playing Defender','Defend'])
     expect(tacticRoleFocus('17095')).toEqual(['Holding','Ball-Winning'])
