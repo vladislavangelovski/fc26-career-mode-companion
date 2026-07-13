@@ -5,7 +5,7 @@ import os from 'node:os'
 import sharp from 'sharp'
 import { createWorker, type Worker } from 'tesseract.js'
 import type { Match, MatchScreenshot, OCRValue, ScreenshotImportResult } from '../src/shared/types'
-import { classifyOCR, extractOCRValues } from '../src/shared/ocr'
+import { applyConfirmedOCR, classifyOCR, extractOCRValues } from '../src/shared/ocr'
 import { CareerStore } from './store'
 
 let worker: Worker | undefined
@@ -75,21 +75,6 @@ export async function importScreenshots(store: CareerStore, matchId: string, sou
 export async function confirmOCR(store: CareerStore, matchId: string, values: OCRValue[]) {
   const match = store.state.matches.find(item => item.id === matchId)
   if (!match) throw new Error('Match not found')
-  match.ocr.values = values
-  for (const value of values.filter(item => item.included)) {
-    const numeric = Number(value.value)
-    if (!Number.isFinite(numeric)) continue
-    if (value.scope === 'player' && !value.playerId) continue
-    if (value.playerId) {
-      const appearance = match.appearances.find(item => item.playerId === value.playerId)
-      if (!appearance) continue
-      if (value.field === 'rating') appearance.rating = numeric
-      else if (value.field === 'goals') appearance.goals = numeric
-      else if (value.field === 'assists') appearance.assists = numeric
-      else if (value.field === 'saves') appearance.saves = numeric
-      else appearance.detailedMetrics[value.field] = numeric
-    } else match.teamStatistics[value.field] = numeric
-  }
-  match.ocr.status = 'confirmed'
+  applyConfirmedOCR(match, values)
   return store.save()
 }

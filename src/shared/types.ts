@@ -2,7 +2,9 @@ export type Confidence = 'Basic' | 'Standard' | 'Strong'
 
 export interface PlayerSnapshot {
   capturedAt: string
+  careerDate?: string
   overall: number
+  potential?: number
   form?: number
   morale?: number
   fitness?: number
@@ -48,6 +50,7 @@ export interface Appearance {
   saves: number
   goalsConceded: number
   detailedMetrics: Record<string, number>
+  telemetry?: { rating?: number; goals: number; assists: number; saves: number }
 }
 
 export interface OCRValue {
@@ -74,6 +77,7 @@ export interface MatchScreenshot {
 
 export interface Match {
   id: string
+  seasonId: string
   fixtureId?: string
   date: string
   competition: string

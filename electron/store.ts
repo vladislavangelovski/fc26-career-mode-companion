@@ -3,8 +3,9 @@ import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from 'node
 import path from 'node:path'
 import os from 'node:os'
 import type { AnalystState } from '../src/shared/types'
+import { migrateState } from '../src/shared/trends'
 
-const VERSION = 1
+const VERSION = 2
 const desktop = path.join(os.homedir(), 'Desktop')
 const directory = path.join(app.getPath('appData'), 'FC26 Career Analyst')
 const liveEditorDirectory = path.join(directory, 'Live Editor')
@@ -36,11 +37,11 @@ export class CareerStore {
     await mkdir(this.screenshotDirectory, { recursive: true })
     await mkdir(this.liveEditorDirectory, { recursive: true })
     try {
-      this.state = JSON.parse(await readFile(this.file, 'utf8')) as AnalystState
+      this.state = migrateState(JSON.parse(await readFile(this.file, 'utf8')) as AnalystState)
       this.state.tactics = this.state.tactics.filter(tactic => tactic.id !== 'default' || tactic.slots.some(slot => slot.imported))
     } catch {
       try {
-        this.state = JSON.parse(await readFile(this.backupFile, 'utf8')) as AnalystState
+        this.state = migrateState(JSON.parse(await readFile(this.backupFile, 'utf8')) as AnalystState)
         await this.save()
       } catch { await this.save() }
     }
@@ -67,8 +68,8 @@ export class CareerStore {
   async exportTo(destination: string) { await this.save(); await copyFile(this.file, destination) }
   async restoreFrom(source: string) {
     const restored = JSON.parse(await readFile(source, 'utf8')) as AnalystState
-    if (restored.schemaVersion !== VERSION || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
-    this.state = restored
+    if (![1, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
+    this.state = migrateState(restored)
     return this.save()
   }
 }
