@@ -36,12 +36,18 @@ export function scorePlayer(player: Player, role: RoleDefinition, appearances: A
   if (player.injured || player.suspended) return { playerId: player.id, roleId: role.id, total: 0, attributes: 0, performance: 0, condition: 0, familiarity: 0, sampleSize: 0, confidence: 'Basic', missingEvidence: [], excluded: player.injured ? 'Injured' : 'Suspended' }
   const attributes = weighted(player.attributes, role.attributeWeights) || player.overall
   const recent = recentPerformance(appearances.filter(a => a.playerId === player.id), role.performanceWeights)
-  const conditionParts = [player.fitness, player.sharpness, player.morale, player.form]
-  const condition = conditionParts.every(v => v === undefined) ? 50 : (player.fitness ?? 50) * .4 + (player.sharpness ?? 50) * .3 + (player.morale ?? 50) * .2 + (player.form ?? 50) * .1
-  const familiarity = player.familiarity[role.id] ?? 0
-  const missingEvidence = [player.fitness === undefined && 'fitness', player.sharpness === undefined && 'sharpness', player.morale === undefined && 'morale', !recent.detailed && 'detailed match metrics'].filter(Boolean) as string[]
-  const total = attributes * .55 + recent.score * .25 + condition * .15 + familiarity * .05
-  return { playerId: player.id, roleId: role.id, total: Math.round(total * 10) / 10, attributes: Math.round(attributes), performance: Math.round(recent.score), condition: Math.round(condition), familiarity, sampleSize: recent.sample, confidence: recent.detailed && recent.sample >= 3 && missingEvidence.length < 2 ? 'Strong' : recent.sample ? 'Standard' : 'Basic', missingEvidence }
+  const conditionParts = [[player.fitness,.4],[player.sharpness,.3],[player.morale,.2],[player.form,.1]] as [number | undefined, number][]
+  const exposedCondition = conditionParts.filter(([value]) => value !== undefined) as [number, number][]
+  const conditionWeight = exposedCondition.reduce((sum, [, weight]) => sum + weight, 0)
+  const condition = conditionWeight ? exposedCondition.reduce((sum, [value, weight]) => sum + value * weight, 0) / conditionWeight : 0
+  const familiarity = player.familiarity[role.id]
+  const components: [number, number][] = [[attributes,55]]
+  if (recent.sample) components.push([recent.score,25])
+  if (conditionWeight) components.push([condition,15])
+  if (familiarity !== undefined) components.push([familiarity,5])
+  const total = components.reduce((sum, [score, weight]) => sum + score * weight, 0) / components.reduce((sum, [, weight]) => sum + weight, 0)
+  const missingEvidence = [player.fitness === undefined && 'fitness', player.sharpness === undefined && 'sharpness', player.morale === undefined && 'morale', !recent.sample && 'recent performance', !recent.detailed && 'detailed match metrics', familiarity === undefined && 'role familiarity'].filter(Boolean) as string[]
+  return { playerId: player.id, roleId: role.id, total: Math.round(total * 10) / 10, attributes: Math.round(attributes), performance: Math.round(recent.score), condition: Math.round(condition), familiarity: familiarity ?? 0, sampleSize: recent.sample, confidence: recent.detailed && recent.sample >= 3 && missingEvidence.length < 2 ? 'Strong' : recent.sample ? 'Standard' : 'Basic', missingEvidence }
 }
 
 export function assignUniqueXI(players: Player[], slots: TacticSlot[], scores: (player: Player, slot: TacticSlot) => number) {

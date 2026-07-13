@@ -12,6 +12,12 @@ describe('recommendation scoring', () => {
     expect(healthy.missingEvidence).toContain('detailed match metrics')
     expect(healthy.confidence).toBe('Basic')
   })
+  it('does not turn missing telemetry into a low score', () => {
+    const sparse=player('sparse'); sparse.fitness=undefined; sparse.sharpness=undefined; sparse.morale=undefined; sparse.form=undefined; sparse.familiarity={}
+    const score=scorePlayer(sparse,ROLE_LIBRARY.at(-1)!,[])
+    expect(Math.abs(score.total-score.attributes)).toBeLessThan(.51)
+    expect(score.missingEvidence).toContain('role familiarity')
+  })
   it('finds the maximum unique assignment rather than a greedy lineup', () => {
     const slots=[{id:'one'},{id:'two'}] as TacticSlot[]
     const matrix:Record<string,number>={'A:one':100,'A:two':99,'B:one':98,'B:two':0}
