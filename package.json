@@ -1,0 +1,41 @@
+{
+  "name": "fc26-career-analyst",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local FC 26 Career Mode analysis companion",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "build": "node -e \"require('fs').rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && vite build",
+    "test": "vitest run --exclude dist-electron/**",
+    "package": "npm run build && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sharp": "^0.34.3",
+    "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.2",
+    "electron": "^37.2.0",
+    "electron-builder": "25.1.8",
+    "typescript": "^5.8.3",
+    "vite": "6.1.0",
+    "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "local.fc26.career-analyst",
+    "productName": "FC 26 Career Analyst",
+    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "asarUnpack": ["node_modules/sharp/**/*", "node_modules/@img/**/*", "node_modules/tesseract.js/**/*", "node_modules/tesseract.js-core/**/*", "node_modules/@tesseract.js-data/**/*"],
+    "directories": { "output": "release" },
+    "win": { "target": "nsis", "signAndEditExecutable": false },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}

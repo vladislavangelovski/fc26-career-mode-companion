@@ -1,0 +1,108 @@
+require 'imports/other/helpers'
+
+-- Run in the Career Mode central hub. This script only reads FC 26 data and
+-- overwrites the two snapshot files consumed by FC 26 Career Analyst.
+local SCHEMA_VERSION = 1
+local DESKTOP = string.format('%s\\Desktop', os.getenv('USERPROFILE'))
+local SQUAD_FILE = DESKTOP .. '\\fc26_squad_snapshot.csv'
+local TACTICS_FILE = DESKTOP .. '\\fc26_tactics_snapshot.csv'
+
+local function number(v) return tonumber(v) or 0 end
+local function value(row, field)
+    local item = row and row[field]
+    if type(item) == 'table' then return item.value end
+    return item
+end
+local function csv(v)
+    v = tostring(v or ''):gsub('"', '""')
+    return '"' .. v .. '"'
+end
+local function index(table_name, key, filter)
+    local result = {}
+    for _, row in ipairs(GetDBTableRows(table_name) or {}) do
+        if not filter or filter(row) then result[number(value(row, key))] = row end
+    end
+    return result
+end
+local function write_csv(path, headers, rows)
+    local file, err = io.open(path, 'w+')
+    assert(file, string.format('Could not open %s: %s', path, tostring(err)))
+    file:write(table.concat(headers, ',') .. '\n')
+    for _, row in ipairs(rows) do file:write(table.concat(row, ',') .. '\n') end
+    file:close()
+end
+
+assert(IsInCM(), 'Load a Career Mode save before running career_snapshot.lua')
+local team_id = GetUserTeamID()
+assert(team_id > 0, 'Managed team ID is invalid')
+local links = index('teamplayerlinks', 'playerid', function(row) return number(value(row, 'teamid')) == team_id end)
+local contracts = index('career_playercontract', 'playerid', function(row) return number(value(row, 'teamid')) == team_id end)
+local players = index('players', 'playerid')
+local date = GetCurrentDate()
+local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
+
+local attributes = {
+    'overallrating','potential','acceleration','sprintspeed','finishing','shotpower','longshots','positioning',
+    'volleys','penalties','vision','crossing','freekickaccuracy','shortpassing','longpassing','curve',
+    'agility','balance','reactions','ballcontrol','dribbling','composure','interceptions','headingaccuracy',
+    'defensiveawareness','standingtackle','slidingtackle','jumping','stamina','strength','aggression',
+    'gkdiving','gkhandling','gkkicking','gkreflexes','gkpositioning'
+}
+local squad_headers = {
+    'schema_version','captured_at','career_date','team_id','team','player_id','player','age','jersey_number',
+    'position','preferred_position_1','preferred_position_2','preferred_position_3','preferred_position_4',
+    'preferred_position_5','preferred_position_6','preferred_position_7','overall','potential','injury','suspension',
+    'form','morale','fitness','sharpness','contract_end','contract_months','wage','squad_role',
+    'playstyle_trait_1','playstyle_trait_2','role_1','role_2','role_3','role_4','role_5'
+}
+for _, attribute in ipairs(attributes) do table.insert(squad_headers, attribute) end
+
+local squad_rows = {}
+for player_id, link in pairs(links) do
+    local player = players[player_id] or {}
+    local contract = contracts[player_id] or {}
+    local birth = DATE:new()
+    birth:FromGregorianDays(number(value(player, 'birthdate')))
+    local row = {
+        SCHEMA_VERSION, csv(captured_at), csv(string.format('%04d-%02d-%02d', date.year, date.month, date.day)),
+        team_id, csv(GetTeamName(team_id)), player_id, csv(GetPlayerName(player_id)), CalculatePlayerAge(date, birth),
+        number(value(link, 'jerseynumber')), number(value(link, 'position')),
+        number(value(player, 'preferredposition1')), number(value(player, 'preferredposition2')), number(value(player, 'preferredposition3')),
+        number(value(player, 'preferredposition4')), number(value(player, 'preferredposition5')), number(value(player, 'preferredposition6')),
+        number(value(player, 'preferredposition7')), number(value(player, 'overallrating')), number(value(player, 'potential')),
+        number(value(link, 'injury')), csv(''), number(value(link, 'form')),
+        csv(''), csv(''), csv(''), number(value(player, 'contractvaliduntil')), number(value(contract, 'duration_months')),
+        number(value(contract, 'wage')), number(value(contract, 'playerrole')), number(value(player, 'trait1')),
+        number(value(player, 'trait2')), number(value(player, 'role1')), number(value(player, 'role2')),
+        number(value(player, 'role3')), number(value(player, 'role4')), number(value(player, 'role5'))
+    }
+    for _, attribute in ipairs(attributes) do table.insert(row, number(value(player, attribute))) end
+    table.insert(squad_rows, row)
+end
+table.sort(squad_rows, function(a, b) return number(a[6]) < number(b[6]) end)
+write_csv(SQUAD_FILE, squad_headers, squad_rows)
+
+local tactic_headers = {
+    'schema_version','captured_at','team_id','formation_id','formation_name','slot','position','x','y','role','focus',
+    'assigned_player_id','build_up_speed','build_up_passing','build_up_dribbling','chance_passing','chance_crossing',
+    'chance_shooting','defensive_pressure','defensive_width','defensive_line'
+}
+local tactic_rows = {}
+local formations = GetDBTableRows('customformations') or {}
+if #formations == 0 then formations = GetDBTableRows('formations') or {} end
+for _, formation in ipairs(formations) do
+    if number(value(formation, 'teamid')) == team_id then
+        for slot = 0, 10 do
+            table.insert(tactic_rows, {
+                SCHEMA_VERSION, csv(captured_at), team_id, number(value(formation, 'formationid')),
+                csv(value(formation, 'formationname')), slot, number(value(formation, 'position' .. slot)),
+                number(value(formation, 'offset' .. slot .. 'x')), number(value(formation, 'offset' .. slot .. 'y')),
+                number(value(formation, 'pos' .. slot .. 'role')), csv(''), csv(''),
+                csv(''), csv(''), csv(''), csv(''), csv(''), csv(''), csv(''), csv('')
+            })
+        end
+    end
+end
+write_csv(TACTICS_FILE, tactic_headers, tactic_rows)
+LOGGER:LogInfo(string.format('Career snapshot wrote %d players and %d tactic slots.', #squad_rows, #tactic_rows))
+LOGGER:LogInfo('Snapshot outputs: ' .. SQUAD_FILE .. ' and ' .. TACTICS_FILE)
