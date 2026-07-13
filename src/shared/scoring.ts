@@ -83,22 +83,42 @@ export function assignUniqueXI(players: Player[], slots: TacticSlot[], scores: (
   return states.get((1 << slots.length) - 1)?.assignments ?? [...states.values()].sort((a,b)=>b.assignments.length-a.assignments.length||b.score-a.score)[0].assignments
 }
 
-export function squadNeeds(players: Player[], slots: TacticSlot[]) {
+export function squadDepth(players: Player[], slots: TacticSlot[]) {
   const unit = (position:string) => ({LB:'FB',RB:'FB',LM:'WM',RM:'WM',LW:'WG',RW:'WG'}[position] ?? position)
   const label:Record<string,string>={GK:'Goalkeeper unit',FB:'Fullback unit',CB:'Centre-back unit',WM:'Wide-midfield unit',WG:'Winger unit',CDM:'Defensive-midfield unit',CM:'Central-midfield unit',CAM:'Attacking-midfield unit',ST:'Striker unit'}
-  return [...new Set(slots.map(slot=>unit(slot.position)))].map(code=>{
+  const used=new Set<string>()
+  const starterBySlot=new Map<string,Player>()
+  for(const slot of slots) {
+    const imported=players.find(player=>player.id===slot.playerId&&player.positions.includes(slot.position)&&!used.has(player.id))
+    const starter=imported??players.filter(player=>player.positions.includes(slot.position)&&!used.has(player.id)).sort((a,b)=>b.overall-a.overall)[0]
+    if(starter){used.add(starter.id);starterBySlot.set(slot.id,starter)}
+  }
+  const units=[...new Set(slots.map(slot=>unit(slot.position)))].map(code=>{
     const unitSlots=slots.filter(slot=>unit(slot.position)===code)
     const positions=[...new Set(unitSlots.map(slot=>slot.position))]
     const ranked=players.filter(player=>player.positions.some(position=>positions.includes(position))).sort((a,b)=>b.overall-a.overall)
     const starterCount=unitSlots.length
-    const targetDepth=starterCount+(code==='GK'?2:starterCount>1?2:1)
-    return {code,label:label[code]??`${code} unit`,slot:unitSlots[0],starter:ranked[0],rotation:ranked[starterCount],depth:ranked.length,targetDepth,available:ranked.filter(player=>!player.injured&&!player.suspended).length,shortfall:Math.max(0,targetDepth-ranked.length)}
-  }).filter(need=>need.shortfall>0).sort((a,b)=>b.shortfall/b.targetDepth-a.shortfall/a.targetDepth)
+    const reserveTarget=code==='GK'?2:1
+    return {code,label:label[code]??`${code} unit`,slot:unitSlots[0],unitSlots,positions,ranked,starterCount,reserveTarget}
+  }).sort((a,b)=>(a.ranked.length-a.starterCount)-(b.ranked.length-b.starterCount))
+  const rotationUsed=new Set<string>()
+  return units.map(info=>{
+    const starters=info.unitSlots.map(slot=>starterBySlot.get(slot.id)).filter(Boolean) as Player[]
+    const reserves=info.ranked.filter(player=>!used.has(player.id)&&!rotationUsed.has(player.id)).slice(0,info.reserveTarget)
+    reserves.forEach(player=>rotationUsed.add(player.id))
+    const cover=info.ranked.find(player=>!starters.some(starter=>starter.id===player.id)&&!reserves.some(reserve=>reserve.id===player.id)&&player.positions.slice(1).some(position=>info.positions.includes(position)))
+    const coverUnits=cover?units.filter(candidate=>cover.positions.some(position=>candidate.positions.includes(position))).length:0
+    const targetDepth=info.starterCount+info.reserveTarget
+    const filled=starters.length+reserves.length
+    return {code:info.code,label:info.label,slot:info.slot,starter:starters[0]??info.ranked[0],rotation:reserves[0],cover,coverConflict:coverUnits>1,depth:info.ranked.length,targetDepth,available:info.ranked.filter(player=>!player.injured&&!player.suspended).length,shortfall:Math.max(0,targetDepth-filled)}
+  }).sort((a,b)=>b.shortfall/b.targetDepth-a.shortfall/a.targetDepth)
 }
 
-export function playerDecision({starter,fitGap,performance,sample,alternativeGap,depthSafe}:{starter:boolean;fitGap:number;performance:number;sample:number;alternativeGap:number;depthSafe:boolean}) {
-  if (sample < 3) return
-  if (!starter && depthSafe && sample >= 5 && fitGap < -5 && performance < 60) return 'Review sale'
-  if (starter && sample >= 3 && performance < 60) return 'Consider bench'
+export const squadNeeds=(players:Player[],slots:TacticSlot[])=>squadDepth(players,slots).filter(need=>need.shortfall>0)
+
+export function playerDecision({starter,fitGap,performance,sample,minutes,alternativeGap,depthSafe}:{starter:boolean;fitGap:number;performance:number;sample:number;minutes:number;alternativeGap:number;depthSafe:boolean}) {
+  if (!starter && depthSafe && sample >= 10 && minutes >= 600 && fitGap < -5 && performance < 60) return 'Review sale'
+  if (sample < 5 || minutes < 300) return
+  if (starter && performance < 60) return 'Consider bench'
   if (starter && alternativeGap >= 5) return 'Try alternative'
 }

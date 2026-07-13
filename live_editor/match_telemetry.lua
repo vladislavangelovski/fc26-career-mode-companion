@@ -3,13 +3,14 @@ require 'imports/other/helpers'
 
 -- Auto-runs with Live Editor; one row per player appearance is appended after every user match.
 local OUTPUT_FILE = string.format('%s\\FC26 Career Analyst\\Live Editor\\fc26_match_telemetry.csv', os.getenv('APPDATA'))
-local SCHEMA_VERSION = 2
+local SCHEMA_VERSION = 3
 
 local baseline
 local baseline_date
 local managed_team_id
 local pending_completion_event
 local pending_fixture
+local pending_tactic
 
 local counters = {
     'app', 'goals', 'assists', 'yellow', 'two_yellow', 'red',
@@ -107,6 +108,27 @@ local function find_fixture()
     return best or { fixture_id = 0, competition_id = 0, home = false, opponent_id = 0 }
 end
 
+local function take_tactic_snapshot()
+    local team_id = get_managed_team_id()
+    local assigned = {}
+    for _, link in ipairs(GetDBTableRows('teamplayerlinks') or {}) do
+        if number(value(link, 'teamid')) == team_id then assigned[number(value(link, 'position'))] = number(value(link, 'playerid')) end
+    end
+    local formations = GetDBTableRows('customformations') or {}
+    if #formations == 0 then formations = GetDBTableRows('formations') or {} end
+    for _, formation in ipairs(formations) do
+        if number(value(formation, 'teamid')) == team_id then
+            local result = { id = number(value(formation, 'formationid')), name = value(formation, 'formationname') or '', roles = {} }
+            for slot = 0, 10 do
+                local player_id = assigned[number(value(formation, 'position' .. slot))]
+                if player_id then result.roles[player_id] = number(value(formation, 'pos' .. slot .. 'role')) end
+            end
+            return result
+        end
+    end
+    return { id = 0, name = '', roles = {} }
+end
+
 local function last_match_rows()
     local rows = {}
     for _, row in ipairs(GetDBTableRows('career_playerlastmatchhistory') or {}) do
@@ -118,9 +140,9 @@ end
 
 local headers = {
     'schema_version', 'career_id', 'match_id', 'fixture_id', 'captured_at', 'career_date', 'completion_event',
-    'team_id', 'opponent_id', 'opponent', 'home_away', 'team_score', 'opponent_score',
+    'team_id', 'opponent_id', 'opponent', 'home_away', 'team_score', 'opponent_score', 'formation_id', 'formation_name',
     'competition_id', 'competition', 'player_id', 'player', 'minutes', 'played_position',
-    'lineup_status', 'lineup_status_source', 'current_ovr', 'appearance', 'rating', 'goals', 'assists', 'yellow_cards',
+    'lineup_status', 'lineup_status_source', 'current_ovr', 'planned_role_code', 'appearance', 'rating', 'goals', 'assists', 'yellow_cards',
     'second_yellows', 'red_cards', 'motm', 'clean_sheets', 'saves',
     'goals_conceded'
 }
@@ -160,6 +182,7 @@ local function write_match(event_id)
     local date = baseline_date or career_date()
     local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
     local fixture = pending_fixture or find_fixture()
+    local tactic = pending_tactic or take_tactic_snapshot()
     local profile_id = career_id()
     local match_id = fixture.fixture_id > 0 and string.format('fixture-%d', fixture.fixture_id)
         or string.format('%s-team-%d-comp-%d', date, get_managed_team_id(), fixture.competition_id)
@@ -189,10 +212,10 @@ local function write_match(event_id)
             local row = {
                 SCHEMA_VERSION, csv(profile_id), csv(match_id), fixture.fixture_id, csv(captured_at), csv(date), event_id,
                 get_managed_team_id(), fixture.opponent_id, csv(fixture.opponent_id > 0 and GetTeamName(fixture.opponent_id) or ''),
-                csv(fixture.home and 'home' or 'away'), team_score, opponent_score,
+                csv(fixture.home and 'home' or 'away'), team_score, opponent_score, tactic.id, csv(tactic.name),
                 competition_id, csv(GetCompetitionNameByObjID(competition_id)),
                 player_id, csv(GetPlayerName(player_id)), minutes, played_position,
-                csv(lineup_status), csv('inferred_from_minutes'), number(value(last, 'playeroverall')),
+                csv(lineup_status), csv('inferred_from_minutes'), number(value(last, 'playeroverall')), tactic.roles[player_id] or csv(''),
                 delta.app, string.format('%.1f', delta.rating), delta.goals, delta.assists,
                 delta.yellow, delta.two_yellow, delta.red, delta.motm,
                 delta.clean_sheets, delta.saves, delta.goals_conceded
@@ -221,6 +244,7 @@ local function before_match(_, event_id)
         baseline = snapshot
         baseline_date = career_date()
         pending_fixture = find_fixture()
+        pending_tactic = take_tactic_snapshot()
         LOGGER:LogInfo('Match telemetry captured the pre-match snapshot.')
     end
 end
@@ -241,6 +265,7 @@ local function after_match(_, event_id)
     if pending_completion_event and write_match(pending_completion_event) then
         pending_completion_event = nil
         pending_fixture = nil
+        pending_tactic = nil
     end
 end
 

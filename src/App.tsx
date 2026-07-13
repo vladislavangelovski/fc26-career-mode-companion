@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { assignUniqueXI, playerDecision, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './shared/scoring'
+import { useEffect, useState } from 'react'
+import { playerDecision, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadDepth, squadNeeds } from './shared/scoring'
 import type { AnalystState, Match, OCRValue, Player, RoleDefinition, RoleScore, Tactic, TacticSlot } from './shared/types'
-import { currentSeason, filteredMatches, matchSeries, playerMetric, snapshotSeries, teamMetric, type TrendRange, type TrendSeries } from './shared/trends'
+import { currentSeason, filteredMatches, matchBriefing, matchSeries, playerMetric, snapshotSeries, teamMetric, type TrendRange, type TrendSeries } from './shared/trends'
 import { roleFocuses } from './shared/telemetry'
 
-type View = 'Overview' | 'Squad' | 'Matches' | 'Trends' | 'Tactics' | 'Recommendations'
-const views: { name: View; key: string }[] = [{ name: 'Overview', key: '01' }, { name: 'Squad', key: '02' }, { name: 'Matches', key: '03' }, { name: 'Trends', key: '04' }, { name: 'Tactics', key: '05' }, { name: 'Recommendations', key: '06' }]
+type View = 'Overview' | 'Performance' | 'Squad' | 'Tactics' | 'Opponent'
+const views: { name: View; key: string }[] = [{ name: 'Overview', key: '01' }, { name: 'Performance', key: '02' }, { name: 'Squad', key: '03' }, { name: 'Tactics', key: '04' }, { name: 'Opponent', key: '05' }]
 const date = (value?: string) => value ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(new Date(value)) : '—'
 const result = (match: Match) => match.teamScore === undefined || match.opponentScore === undefined ? '—' : match.teamScore > match.opponentScore ? 'W' : match.teamScore < match.opponentScore ? 'L' : 'D'
 const ROLE_MODEL: Record<string, string> = {
@@ -29,7 +29,6 @@ function scoreFor(state: AnalystState, player: Player, slot: TacticSlot) {
 }
 
 const activeTactic = (state: AnalystState) => [...state.tactics].sort((a,b)=>b.slots.filter(slot=>slot.playerId).length-a.slots.filter(slot=>slot.playerId).length)[0]
-const evidenceMatches = (state: AnalystState) => state.matches.filter(match => match.seasonId === currentSeason(state) && match.appearances.some(appearance=>appearance.rating!==undefined)).length
 
 function Pitch({ tactic, state, selected, onSelect, assignments }: { tactic: Tactic; state: AnalystState; selected?: string; onSelect?: (id: string) => void; assignments?: Map<string, string> }) {
   return <div className="pitch" aria-label={`${tactic.formation} tactical pitch`}>
@@ -52,7 +51,7 @@ function Empty({ children }: { children: string }) { return <div className="empt
 const TEAM_PRESETS = {
   attacking: [['goals', 'Goals', 'Telemetry'], ['expectedGoals', 'xG', 'Confirmed OCR']],
   expected: [['expectedGoals','xG','Confirmed OCR'],['expectedGoalsAgainst','xGA','Confirmed OCR'],['expectedGoalDifference','xGD','Confirmed OCR']],
-  shooting: [['shots', 'Shots', 'Confirmed OCR'], ['shotsOnTarget', 'Shots on target', 'Confirmed OCR']],
+  shooting: [['shots', 'Shots', 'Confirmed OCR'], ['shotsOnTarget', 'Shots on target', 'Confirmed OCR'],['shotAccuracy','Shot accuracy %','Confirmed OCR'],['expectedGoalsPerShot','xG per shot','Confirmed OCR']],
   control: [['possession', 'Possession %', 'Confirmed OCR'], ['passAccuracy', 'Pass accuracy %', 'Confirmed OCR']],
   defensive: [['tacklesWon', 'Tackles', 'Confirmed OCR'], ['interceptions', 'Interceptions', 'Confirmed OCR']],
 } as const
@@ -96,18 +95,22 @@ function Overview({ state, setView }: { state: AnalystState; setView: (view: Vie
   const tactic = activeTactic(state)
   const recent = state.matches.slice(0, 5)
   const unavailable = state.career.teamId ? state.players.filter(p => p.injured || p.suspended) : []
-  const sample = evidenceMatches(state)
+  const supported=state.players.filter(player=>{const apps=playerApps(state,player.id);return apps.filter(app=>app.rating!==undefined).length>=5&&apps.reduce((sum,app)=>sum+app.minutes,0)>=300}).length
+  const last=recent[0]
   return <>
     <PageTitle eyebrow="Command centre" title={state.career.teamName} note={tactic ? `${currentSeason(state)} · ${tactic.formation}` : 'Waiting for squad and tactics exports'} />
     <div className="overview-grid">
       <section className="pitch-panel"><SectionTitle title="Active system" action={tactic ? 'Edit tactics' : undefined} onAction={() => setView('Tactics')} />{tactic ? <Pitch tactic={tactic} state={state}/> : <Empty>No tactic has been imported from Live Editor yet.</Empty>}</section>
       <aside className="overview-rail">
+        <section><SectionTitle title="Next opponent" action={state.opponent?'Open briefing':undefined} onAction={()=>setView('Opponent')}/>{state.opponent?<><Line left={state.opponent.teamName} right={date(state.opponent.date)} tone="good"/><p className="muted">{state.opponent.competition||'Competition pending'}{state.opponent.formation?` · exposed shape ${state.opponent.formation}`:''}</p></>:<Line left="Waiting for the next fixture snapshot" right="Not exposed"/>}</section>
         <section><SectionTitle title="Last five"/><div className="form-strip">{recent.length ? recent.map(match => <span key={match.id} className={result(match)}>{result(match)}</span>) : <em>NO MATCHES</em>}</div></section>
         <section><SectionTitle title="Availability" count={unavailable.length}/>{unavailable.length ? unavailable.map(p => <Line key={p.id} left={p.name} right={p.injured ? 'Injured' : 'Suspended'} tone="warn"/>) : <Line left="Full squad available" right="Clear" tone="good"/>}</section>
-        <section><SectionTitle title="Squad analysis"/>{sample < 3 ? <Line left="Learning from current-season ratings" right={`${sample}/3 matches`}/> : <Line left="Lineup and role review available" right="Ready" tone="good"/>}</section>
+        <section><SectionTitle title="Squad evidence"/><Line left="Players meeting the 5-match / 300-minute gate" right={`${supported}/${state.players.length}`} tone={supported?'good':undefined}/></section>
       </aside>
     </div>
-    <section className="lower-band"><SectionTitle title="Recent matches" action="Open match room" onAction={() => setView('Matches')}/>{recent.length ? <MatchRows matches={recent}/> : <Empty>Run the telemetry script before a match to begin the timeline.</Empty>}</section>
+    {last&&<section className="lower-band"><SectionTitle title="Latest evidence briefing" action="Open performance" onAction={()=>setView('Performance')}/><div className="briefing-list">{matchBriefing(last).map(note=><p key={note}>{note}</p>)}</div></section>}
+    <section className="lower-band"><SectionTitle title="Recent matches" action="Open performance" onAction={() => setView('Performance')}/>{recent.length ? <MatchRows matches={recent}/> : <Empty>Automatic telemetry will begin the timeline after your next match.</Empty>}</section>
+    <section className="lower-band"><SectionTitle title="Data coverage"/><SourceHealth state={state}/></section>
   </>
 }
 
@@ -125,6 +128,7 @@ function Squad({ state }: { state: AnalystState }) {
       </section>
       <aside className="inspector">{selected ? <PlayerInspector player={selected} state={state}/> : <Empty>Select a player to inspect.</Empty>}</aside>
     </div>
+    <SquadDecisions state={state}/>
   </>
 }
 
@@ -135,15 +139,21 @@ function PlayerInspector({ player, state }: { player: Player; state: AnalystStat
   const fit = role ? scorePlayer(player, role, apps) : undefined
   return <><p className="kicker">PLAYER DOSSIER</p><h2>{player.name}</h2><p className="muted">{player.positions.join(' · ')} · OVR {player.overall}</p>
     <div className="hero-number"><span>{player.overall}</span><small>CURRENT OVR</small></div>
-    <SectionTitle title="Current FC role"/><Line left={slot ? `${slot.role} · ${slot.focus}` : 'Not in starting XI'} right={fit ? `${fit.total} fit` : '—'} tone="good"/>
+    <SectionTitle title="Current FC role"/><Line left={slot ? `${slot.role} · ${slot.focus}` : 'Not in starting XI'} right={fit ? `${fit.total} analyst estimate` : '—'} tone="good"/>
     {fit && <ScoreEvidence score={fit}/>}<SectionTitle title="Availability"/>
     <Line left={player.injured?'Injured':player.suspended?'Suspended':'Available for selection'} right={player.injured||player.suspended?'Unavailable':'Clear'} tone={player.injured||player.suspended?'warn':'good'}/>
-    <SectionTitle title="Development & contract"/><DataGrid values={[['Potential',player.potential],['Age',player.age],['Wage',player.wage ? player.wage.toLocaleString() : undefined],['Contract',player.contractEnd]]}/>
+    <SectionTitle title="Development & contract"/><DataGrid values={[['Potential',player.potential],['Age',player.age],['Wage',player.wage ? player.wage.toLocaleString() : undefined],['Contract',player.contractMonths?`${player.contractMonths} months`:player.contractEnd]]}/>
     <SectionTitle title="Recent trends"/><div className="mini-trends"><MiniTrend label="Match rating" values={apps.slice(-8).map(app=>app.rating)}/><MiniTrend label="OVR" values={player.snapshots.slice(-12).map(snapshot=>snapshot.overall)}/></div>
   </>
 }
 
-function Matches({ state, onState, requestedId }: { state: AnalystState; onState: (state: AnalystState) => void; requestedId?: string }) {
+function Performance({state,onState,requestedId,openMatch}:{state:AnalystState;onState:(state:AnalystState)=>void;requestedId?:string;openMatch:(matchId:string)=>void}) {
+  const [tab,setTab]=useState<'matches'|'trends'>(requestedId?'matches':'trends')
+  useEffect(()=>{if(requestedId)setTab('matches')},[requestedId])
+  return <><PageTitle eyebrow="Analysis" title="Performance" note={`${state.career.teamName} · ${currentSeason(state)}`}/><div className="workspace-tabs segmented"><button className={tab==='matches'?'active':''} onClick={()=>setTab('matches')}>Matches</button><button className={tab==='trends'?'active':''} onClick={()=>setTab('trends')}>Trends</button></div>{tab==='matches'?<Matches state={state} onState={onState} requestedId={requestedId} embedded/>:<Trends state={state} openMatch={openMatch} embedded/>}</>
+}
+
+function Matches({ state, onState, requestedId,embedded=false }: { state: AnalystState; onState: (state: AnalystState) => void; requestedId?: string;embedded?:boolean }) {
   const [selectedId, setSelected] = useState(requestedId??state.matches[0]?.id)
   useEffect(()=>{if(requestedId)setSelected(requestedId)},[requestedId])
   const selected = state.matches.find(m => m.id === selectedId) ?? state.matches[0]
@@ -151,33 +161,37 @@ function Matches({ state, onState, requestedId }: { state: AnalystState; onState
   useEffect(() => setReview(selected?.ocr.values ?? []), [selected?.id, selected?.ocr.values])
   const importImages = async () => { if (!selected) return; await window.fc26.importScreenshots(selected.id) }
   const confirm = async () => { if (selected) onState(await window.fc26.confirmOCR(selected.id, review)) }
+  const comparisons=selected?[['expectedGoals','xG'],['shots','Shots'],['shotsOnTarget','On target'],['possession','Possession %'],['passAccuracy','Pass accuracy %'],['tacklesWon','Tackles'],['interceptions','Interceptions']].filter(([field])=>selected.teamStatistics[field]!==undefined||selected.opponentStatistics[field]!==undefined):[]
   return <>
-    <PageTitle eyebrow="Match room" title="Performance archive" note={`${state.matches.length} fixtures preserved`} />
+    {!embedded&&<PageTitle eyebrow="Match room" title="Performance archive" note={`${state.matches.length} fixtures preserved`} />}
     <div className="match-workspace">
       <aside className="match-list">{state.matches.map(match => <button key={match.id} className={selected?.id === match.id ? 'active' : ''} onClick={() => setSelected(match.id)}><time>{date(match.date)}</time><span><b>{match.opponent}</b><small>{match.competition}</small></span><strong>{match.teamScore ?? '–'} : {match.opponentScore ?? '–'}</strong><em className={result(match)}>{result(match)}</em></button>)}</aside>
       <section className="match-detail">{selected ? <>
         <div className="scoreline"><div><p>{selected.venue || 'fixture'}</p><h2>{state.career.teamName}</h2></div><strong>{selected.teamScore ?? '–'}<i>:</i>{selected.opponentScore ?? '–'}</strong><div><p>{selected.competition}</p><h2>{selected.opponent}</h2></div></div>
         <div className="match-actions"><span className={`status ${selected.ocr.status}`}>{selected.captureLevel === 'telemetry' ? 'TELEMETRY ONLY' : `OCR ${selected.ocr.status.toUpperCase()}`}</span><button className="primary" onClick={importImages}>Add screenshot batch</button></div>
+        <section className="match-brief"><div><SectionTitle title="Evidence briefing"/><div className="briefing-list">{matchBriefing(selected).map(note=><p key={note}>{note}</p>)}</div></div><div><SectionTitle title="Team comparison"/>{comparisons.length?<div className="comparison-grid">{comparisons.map(([field,label])=><div key={field}><strong>{displayValue(selected.teamStatistics[field])}</strong><span>{label}</span><strong>{displayValue(selected.opponentStatistics[field])}</strong></div>)}</div>:<p className="muted">Detailed team comparisons appear after screenshot review.</p>}</div></section>
         <SectionTitle title="Appearances" count={selected.appearances.length}/>
         <table><thead><tr><th>Player</th><th>Min</th><th>Pos</th><th>Rating</th><th>G</th><th>A</th><th>Evidence</th></tr></thead><tbody>{selected.appearances.map(a => <tr key={a.id}><td><strong>{state.players.find(p => p.id === a.playerId)?.name || a.playerId}</strong></td><td>{a.minutes||'—'}</td><td>{a.position || '—'}</td><td className="metric">{a.rating ?? '—'}</td><td>{a.goals}</td><td>{a.assists}</td><td>{Object.keys(a.detailedMetrics).length ? 'Detailed' : 'Basic'}</td></tr>)}</tbody></table>
-        {selected.ocr.status === 'review' && <section className="ocr-review"><SectionTitle title="OCR review" count={review.length}/><p className="muted">Nothing below affects analysis until you confirm it. Values under 90% are flagged; unmatched player pages remain disabled.</p><table><thead><tr><th>Use</th><th>Player</th><th>Field</th><th>Value</th><th>Confidence</th></tr></thead><tbody>{review.map((value,index) => <tr key={value.id} className={value.confidence < 90 || value.unmatchedPlayer ? 'low-confidence' : ''}><td><input type="checkbox" disabled={value.unmatchedPlayer} checked={value.included} onChange={e => setReview(review.map((v,i) => i === index ? {...v,included:e.target.checked}:v))}/></td><td>{value.unmatchedPlayer ? 'Unmatched player' : state.players.find(p => p.id === value.playerId)?.name || 'Team'}</td><td>{value.field}</td><td><input value={value.value} onChange={e => setReview(review.map((v,i) => i === index ? {...v,value:e.target.value}:v))}/></td><td>{value.confidence}%</td></tr>)}</tbody></table><button className="primary confirm" onClick={confirm}>Confirm reviewed values</button></section>}
+        {selected.ocr.status === 'review' && <section className="ocr-review"><SectionTitle title="OCR review" count={review.length}/><p className="muted">Nothing below affects analysis until you confirm it. Values under 90% are flagged; unmatched player pages remain disabled.</p><table><thead><tr><th>Use</th><th>Source</th><th>Field</th><th>Value</th><th>Confidence</th></tr></thead><tbody>{review.map((value,index) => <tr key={value.id} className={value.confidence < 90 || value.unmatchedPlayer ? 'low-confidence' : ''}><td><input type="checkbox" disabled={value.unmatchedPlayer} checked={value.included} onChange={e => setReview(review.map((v,i) => i === index ? {...v,included:e.target.checked}:v))}/></td><td>{value.unmatchedPlayer ? 'Unmatched player' : state.players.find(p => p.id === value.playerId)?.name || (value.scope==='opponent'?selected.opponent:state.career.teamName)}</td><td>{value.field}</td><td><input value={value.value} onChange={e => setReview(review.map((v,i) => i === index ? {...v,value:e.target.value}:v))}/></td><td>{value.confidence}%</td></tr>)}</tbody></table><button className="primary confirm" onClick={confirm}>Confirm reviewed values</button></section>}
       </> : <Empty>A played or simulated match will appear after telemetry import.</Empty>}</section>
     </div>
   </>
 }
 
-function Trends({ state, openMatch }: { state: AnalystState; openMatch: (matchId: string) => void }) {
+function Trends({ state, openMatch,embedded=false }: { state: AnalystState; openMatch: (matchId: string) => void;embedded?:boolean }) {
   const [scope,setScope]=useState<'team'|'player'>('team')
   const [range,setRange]=useState<TrendRange>(10)
   const [competition,setCompetition]=useState('All')
+  const [formation,setFormation]=useState('All')
   const [preset,setPreset]=useState<keyof typeof TEAM_PRESETS>('attacking')
   const season=currentSeason(state)
   const seasonMatches=filteredMatches(state,'all')
   const minuteLeader=state.players.map(player=>({player,minutes:seasonMatches.flatMap(match=>match.appearances).filter(app=>app.playerId===player.id).reduce((sum,app)=>sum+app.minutes,0)})).sort((a,b)=>b.minutes-a.minutes)[0]?.player
   const [playerId,setPlayerId]=useState(minuteLeader?.id??state.players[0]?.id??'')
   const [metric,setMetric]=useState('rating')
-  const matches=filteredMatches(state,range,competition)
-  const allFiltered=filteredMatches(state,'all',competition)
+  const competitionMatches=filteredMatches(state,'all',competition)
+  const allFiltered=competitionMatches.filter(match=>formation==='All'||match.formation===formation)
+  const matches=range==='all'?allFiltered:allFiltered.slice(-range)
   const player=state.players.find(item=>item.id===playerId)??minuteLeader
   const availableMatchMetrics=PLAYER_METRICS.filter(([field])=>{
     const values=allFiltered.flatMap(match=>{const app=match.appearances.find(item=>item.playerId===player?.id);return app?[playerMetric(match,app,field)]:[]})
@@ -185,19 +199,20 @@ function Trends({ state, openMatch }: { state: AnalystState; openMatch: (matchId
   })
   const availableSnapshots=SNAPSHOT_METRICS.filter(([field])=>player?.snapshots.some(snapshot=>typeof snapshot[field]==='number'))
   const available=[...availableMatchMetrics,...availableSnapshots]
-  useEffect(()=>{if(scope==='player'&&!available.some(([field])=>field===metric))setMetric(available[0]?.[0]??'rating')},[scope,playerId,competition,state.matches.length])
+  useEffect(()=>{if(scope==='player'&&!available.some(([field])=>field===metric))setMetric(available[0]?.[0]??'rating')},[scope,playerId,competition,formation,state.matches.length])
   const teamSeries:TrendSeries[]=TEAM_PRESETS[preset].map(([field,label,source])=>matchSeries(matches,field,label,match=>teamMetric(match,field),source))
   const playerDefinition=available.find(([field])=>field===metric)
   const playerSeries=player&&playerDefinition ? (SNAPSHOT_METRICS.some(([field])=>field===metric)
     ? [snapshotSeries(player.snapshots,metric as keyof typeof player.snapshots[number],playerDefinition[1],range,season)]
     : [matchSeries(matches,metric,playerDefinition[1],match=>{const app=match.appearances.find(item=>item.playerId===player.id);return app?playerMetric(match,app,metric):undefined},playerDefinition[2] as 'Telemetry'|'Confirmed OCR')]) : []
   const competitions=[...new Set(seasonMatches.map(match=>match.competition).filter(Boolean))].sort()
-  return <><PageTitle eyebrow="Analysis" title="Current-season trends" note={`${state.career.teamName} · ${season}`} />
+  const formations=[...new Set(seasonMatches.map(match=>match.formation).filter(Boolean))].sort() as string[]
+  return <>{!embedded&&<PageTitle eyebrow="Analysis" title="Current-season trends" note={`${state.career.teamName} · ${season}`} />}
     <section className="trend-workspace">
       <div className="trend-toolbar">
         <div className="segmented" aria-label="Trend scope">{(['team','player'] as const).map(value=><button key={value} className={scope===value?'active':''} onClick={()=>setScope(value)}>{value}</button>)}</div>
         <div className="segmented" aria-label="Match range">{([[5,'Last 5'],[10,'Last 10'],['all','All']] as const).map(([value,label])=><button key={value} className={range===value?'active':''} onClick={()=>setRange(value)}>{label}</button>)}</div>
-        <label>Competition<select value={competition} onChange={event=>setCompetition(event.target.value)}><option>All</option>{competitions.map(value=><option key={value}>{value}</option>)}</select></label>
+        <label>Competition<select value={competition} onChange={event=>setCompetition(event.target.value)}><option>All</option>{competitions.map(value=><option key={value}>{value}</option>)}</select></label><label>Formation<select value={formation} onChange={event=>setFormation(event.target.value)}><option>All</option>{formations.map(value=><option key={value}>{value}</option>)}</select></label>
       </div>
       <div className="trend-selects">{scope==='team'?<><span>Team view</span>{(Object.keys(TEAM_PRESETS) as (keyof typeof TEAM_PRESETS)[]).map(value=><button key={value} className={preset===value?'active':''} onClick={()=>setPreset(value)}>{value}</button>)}</>:<><label>Player<select value={player?.id??''} onChange={event=>setPlayerId(event.target.value)}>{state.players.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Metric<select value={metric} onChange={event=>setMetric(event.target.value)}>{available.map(([field,label])=><option key={field} value={field}>{label}</option>)}</select></label></>}</div>
       <p className="trend-note">{scope==='team'?`${TEAM_PRESETS[preset].map(([,label])=>label).join(' and ')} across ${matches.length} current-season matches.`:`${player?.name??'No player'} · metrics with no source values are hidden.`} Click or press Enter on a match point to open it.</p>
@@ -216,69 +231,75 @@ function TacticsEditor({ state, onState, tactic }: { state: AnalystState; onStat
   const [draft, setDraft] = useState(tactic)
   const [selectedId, setSelected] = useState(draft.slots[0]?.id)
   const slot = draft.slots.find(item => item.id === selectedId)
-  const sample = evidenceMatches(state)
+  const formationMatches=state.matches.filter(match=>match.seasonId===currentSeason(state)&&match.formation===draft.formation)
+  const formationXgd=formationMatches.map(match=>teamMetric(match,'expectedGoalDifference')).filter((value):value is number=>value!==undefined)
   const updateSlot = (change: Partial<TacticSlot>) => setDraft({...draft, slots: draft.slots.map(item => item.id === selectedId ? {...item,...change}:item)})
   const save = async () => onState(await window.fc26.updateTactic({...draft,corrected:true,slots:draft.slots.map(item=>({...item,focus:roleFocuses(item.position,item.role).includes(item.focus)?item.focus:roleFocuses(item.position,item.role)[0]}))}))
-  return <><PageTitle eyebrow="Game model" title="Tactical laboratory" note={`${draft.formation} · imported values remain editable`} />
+  return <><PageTitle eyebrow="Game model" title="Tactical laboratory" note={`${draft.formation} · edits are analyst scenarios only`} />
     <div className="tactics-layout"><section className="pitch-panel"><Pitch tactic={draft} state={state} selected={selectedId} onSelect={setSelected}/></section>
       <aside className="inspector"><p className="kicker">SELECTED SLOT</p><h2>{slot?.position || '—'}</h2>{slot && <>
         <label>Assigned player<select value={slot.playerId || ''} onChange={e => updateSlot({playerId:e.target.value || undefined})}><option value="">Unassigned</option>{state.players.map(p => <option value={p.id} key={p.id}>{p.name} · {p.overall}</option>)}</select></label>
         <label>Position<select value={slot.position} onChange={e => {const role=FC_ROLES[e.target.value][0];updateSlot({position:e.target.value,role,focus:roleFocuses(e.target.value,role)[0]})}}>{['GK','LB','CB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST'].map(p => <option key={p}>{p}</option>)}</select></label>
         <label>Role<select value={slot.role} onChange={e => updateSlot({role:e.target.value,focus:roleFocuses(slot.position,e.target.value)[0]})}>{(FC_ROLES[slot.position] ?? [slot.role]).map(role => <option key={role}>{role}</option>)}</select></label>
         <label>Focus<select value={roleFocuses(slot.position,slot.role).includes(slot.focus)?slot.focus:roleFocuses(slot.position,slot.role)[0]} onChange={e => updateSlot({focus:e.target.value})}>{roleFocuses(slot.position,slot.role).map(f => <option key={f}>{f}</option>)}</select></label>
-        <SectionTitle title={sample<3?'Attribute candidates':'Ranked candidates'}/>{state.players.map(player => {const role=roleFor(slot);return {player,score:role?positionAdjustedScore(player,slot.position,scorePlayer(player,role,playerApps(state,player.id))[sample<3?'attributes':'total']):Number.NEGATIVE_INFINITY}}).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score},index)=><Line key={player.id} left={`${index+1}. ${player.name}`} right={`${Math.round(score)}`}/>)}</>}
-        <button className="primary save-tactic" onClick={save}>Save tactical corrections</button>
-      </aside></div></>
+        <SectionTitle title="Role candidates"/>{state.players.map(player => {const role=roleFor(slot),apps=playerApps(state,player.id),supported=apps.filter(app=>app.rating!==undefined).length>=5&&apps.reduce((sum,app)=>sum+app.minutes,0)>=300;return {player,supported,score:role?positionAdjustedScore(player,slot.position,scorePlayer(player,role,apps)[supported?'total':'attributes']):Number.NEGATIVE_INFINITY}}).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score,supported},index)=><Line key={player.id} left={`${index+1}. ${player.name}${supported?'':' · attributes only'}`} right={`${Math.round(score)}`}/>)}</>}
+        <button className="primary save-tactic" onClick={save}>Save analyst scenario</button>
+      </aside></div><section className="lower-band"><SectionTitle title="Formation evidence" count={formationMatches.length}/>{formationMatches.length?<><Line left="Current-season record" right={`${formationMatches.filter(match=>result(match)==='W').length}W · ${formationMatches.filter(match=>result(match)==='D').length}D · ${formationMatches.filter(match=>result(match)==='L').length}L`}/><Line left="Average confirmed xGD" right={formationXgd.length?displayValue(formationXgd.reduce((sum,value)=>sum+value,0)/formationXgd.length):'Not exposed'}/></>:<Line left="No imported match is linked to this formation yet" right="Waiting"/>}</section></>
 }
 
-function Recommendations({ state }: { state: AnalystState }) {
-  const tactic = activeTactic(state)
-  const sample = evidenceMatches(state)
-  const xi = tactic ? (sample<3 ? tactic.slots.flatMap(slot=>slot.playerId?[{slotId:slot.id,playerId:slot.playerId,score:0}]:[]) : assignUniqueXI(state.players, tactic.slots, (player,slot) => scoreFor(state,player,slot))) : []
-  const assignment = new Map(xi.map(item => [item.slotId,item.playerId]))
-  const allNeeds = tactic ? squadNeeds(state.players,tactic.slots) : []
-  const needs = allNeeds.slice(0,3)
-  const [selected, setSelected] = useState(tactic?.slots[0]?.id)
-  if (!tactic) return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note="Waiting for verified squad and tactics exports"/><section className="lower-band"><Empty>Recommendations stay disabled until a real tactic is imported.</Empty></section></>
-  const currentShortfall=allNeeds.reduce((sum,need)=>sum+need.shortfall,0)
-  const firstTeam=state.players.map(player=>player.overall).sort((a,b)=>b-a).slice(0,11)
-  const qualityTarget=Math.max(50,firstTeam.reduce((sum,value)=>sum+value,0)/Math.max(firstTeam.length,1)-3)
-  const playerReviews=state.players.flatMap(player=>{
+function SquadDecisions({state}:{state:AnalystState}) {
+  const tactic=activeTactic(state)
+  if(!tactic)return <section className="lower-band"><SectionTitle title="Squad decisions"/><Empty>Import a tactic before the app evaluates squad coverage.</Empty></section>
+  const matches=state.matches.filter(match=>match.seasonId===currentSeason(state))
+  const depth=squadDepth(state.players,tactic.slots),baseShortfall=depth.reduce((sum,item)=>sum+item.shortfall,0)
+  const starterEvidence=tactic.slots.flatMap(slot=>{const player=state.players.find(item=>item.id===slot.playerId),role=roleFor(slot);if(!player||!role)return[];const apps=playerApps(state,player.id),score=scorePlayer(player,role,apps);return[{player,slot,apps,score,minutes:apps.reduce((sum,app)=>sum+app.minutes,0)}]})
+  const percentile=(values:number[])=>values.length?[...values].sort((a,b)=>a-b)[Math.floor((values.length-1)*.25)]:0
+  const attributeFloor=percentile(starterEvidence.map(item=>item.score.attributes)),performanceFloor=percentile(starterEvidence.filter(item=>item.score.sampleSize>=5&&item.minutes>=300).map(item=>item.score.performance))
+  const decisions=state.players.flatMap(player=>{
     if(player.injured||player.suspended)return[]
     const currentSlot=tactic.slots.find(slot=>slot.playerId===player.id)
-    const options=tactic.slots.map(slot=>({slot,score:scoreFor(state,player,slot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score)
-    const slot=currentSlot??options[0]?.slot
-    if(!slot||!player.positions.includes(slot.position))return sample<3?[]:[{action:'System mismatch',title:player.name,reason:`No current-system slot matches the player's imported primary or secondary positions (${player.positions.join(' / ')||'not exposed'}).`}]
-    const role=roleFor(slot)
-    if(!role)return[]
-    const score=scorePlayer(player,role,playerApps(state,player.id))
-    const alternative=currentSlot?state.players.filter(candidate=>candidate.id!==player.id).map(candidate=>({player:candidate,score:scoreFor(state,candidate,currentSlot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score)[0]:undefined
-    const action=playerDecision({starter:!!currentSlot,fitGap:score.attributes-qualityTarget,performance:score.performance,sample:score.sampleSize,alternativeGap:alternative?alternative.score-scoreFor(state,player,slot):0,depthSafe:squadNeeds(state.players.filter(candidate=>candidate.id!==player.id),tactic.slots).reduce((sum,need)=>sum+need.shortfall,0)<=currentShortfall})
-    if(!action)return[]
-    const reason=action==='Review sale'?`Role fit is below the squad-level target and recent rating form is ${score.performance}/100 across ${score.sampleSize} matches; depth remains covered.`:action==='Consider bench'?`Recent rating form is ${score.performance}/100 across ${score.sampleSize} matches${alternative?`; ${alternative.player.name} is the leading alternative.`:'.'}`:`${alternative!.player.name} scores ${Math.round(alternative!.score-scoreFor(state,player,slot))} points better for ${slot.position} ${slot.role}.`
-    return[{action,title:player.name,reason}]
+    const eligible=tactic.slots.filter(slot=>player.positions.includes(slot.position))
+    if(!eligible.length)return[{action:'Profile mismatch',title:player.name,reason:`None of the player’s imported positions (${player.positions.join(' / ')||'not exposed'}) exists in the current system. This is structural evidence, not a performance judgment.`}]
+    const slot=currentSlot??eligible.map(slot=>({slot,score:scoreFor(state,player,slot)})).sort((a,b)=>b.score-a.score)[0].slot
+    const role=roleFor(slot);if(!role)return[]
+    const apps=playerApps(state,player.id),minutes=apps.reduce((sum,app)=>sum+app.minutes,0),score=scorePlayer(player,role,apps)
+    const alternative=currentSlot?state.players.filter(candidate=>candidate.id!==player.id&&!candidate.injured&&!candidate.suspended).map(candidate=>({player:candidate,score:scoreFor(state,candidate,currentSlot)})).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score)[0]:undefined
+    const depthSafe=squadNeeds(state.players.filter(candidate=>candidate.id!==player.id),tactic.slots).reduce((sum,item)=>sum+item.shortfall,0)<=baseShortfall
+    const action=playerDecision({starter:!!currentSlot,fitGap:score.attributes-attributeFloor,performance:score.performance,sample:score.sampleSize,minutes,alternativeGap:alternative?alternative.score-scoreFor(state,player,slot):0,depthSafe})
+    const output:{action:string;title:string;reason:string}[]=[]
+    if(action)output.push({action,title:player.name,reason:action==='Review sale'?`${score.sampleSize} rated appearances and ${minutes} minutes support a review; role attributes and recent ratings are weak relative to this squad, and natural-position depth remains covered.`:action==='Consider bench'?`Recent ratings are ${score.performance}/100 across ${score.sampleSize} matches and ${minutes} minutes${alternative?`; ${alternative.player.name} is the strongest eligible alternative.`:'.'}`:`${alternative?.player.name} is at least five role-fit points ahead after the evidence gate.`})
+    const blockers=state.players.filter(candidate=>candidate.id!==player.id&&candidate.overall>player.overall&&candidate.positions.some(position=>player.positions.includes(position))).length
+    if(matches.length>=10&&(player.age??99)<=21&&player.potential!==undefined&&player.potential-player.overall>=4&&minutes<matches.length*18&&blockers>=2&&depthSafe)output.push({action:'Loan pathway',title:player.name,reason:`Only ${minutes} minutes from ${matches.length} team matches, with ${blockers} stronger natural-position options blocking a player who still has development headroom.`})
+    return output
   })
-  const seenRoles=new Set<string>()
-  const qualityNeeds=sample<3?[]:tactic.slots.flatMap(slot=>{
-    const key=`${slot.position}:${slot.role}`
-    if(seenRoles.has(key))return[];seenRoles.add(key)
-    const role=roleFor(slot)
-    if(!role)return[]
-    const best=state.players.map(player=>positionAdjustedScore(player,slot.position,scorePlayer(player,role,playerApps(state,player.id)).attributes)).filter(Number.isFinite).sort((a,b)=>b-a)[0]
-    return best===undefined||best>=qualityTarget?[]:[{action:'Recruit upgrade',title:`${slot.position} · ${slot.role}`,reason:`Best available role-attribute fit is ${best.toFixed(1)}/100; the current squad-level target is ${qualityTarget.toFixed(1)}.`}]
-  })
-  const decisions=[...playerReviews,...qualityNeeds].sort((a,b)=>['Review sale','Consider bench','Try alternative','System mismatch','Recruit upgrade'].indexOf(a.action)-['Review sale','Consider bench','Try alternative','System mismatch','Recruit upgrade'].indexOf(b.action)).slice(0,8)
-  const selectedAssignment = xi.find(item => item.slotId === selected)
-  const selectedSlot = tactic.slots.find(slot => slot.id === selected)
-  const selectedPlayer = state.players.find(player => player.id === selectedAssignment?.playerId)
-  const selectedRole = selectedSlot ? roleFor(selectedSlot) : undefined
-  const evidence = selectedPlayer && selectedRole ? scorePlayer(selectedPlayer, selectedRole, playerApps(state,selectedPlayer.id)) : undefined
-  return <><PageTitle eyebrow="Decision room" title="Squad recommendations" note={sample < 3 ? `Learning your squad · ${sample}/3 matches` : 'Evidence-based role fit · unique-player assignment'}/>
-    <div className="recommend-layout"><section className="pitch-panel"><SectionTitle title={sample<3?'Current imported XI · learning period':'Recommended available XI'}/><Pitch tactic={tactic} state={state} assignments={assignment} selected={selected} onSelect={setSelected}/></section>
-      <aside className="inspector"><p className="kicker">SELECTION EVIDENCE</p>{selectedPlayer && selectedSlot && evidence ? <><h2>{selectedPlayer.name}</h2><p className="muted">{selectedSlot.role} · {selectedSlot.focus} · {evidence.sampleSize<3?`Early estimate · ${evidence.sampleSize}/3 matches`:'Match-supported estimate'}</p><div className="hero-number"><span>{evidence.total}</span><small>{evidence.sampleSize<3?'PROVISIONAL FIT':'ROLE FIT'} / 100</small></div><ScoreEvidence score={evidence}/></> : <Empty>Import squad data to generate the XI.</Empty>}</aside></div>
-    <section className="lower-band"><SectionTitle title="Squad decisions" count={decisions.length}/><p className="muted">The app observes at least 3 matches before judging system fit, lineup changes or quality upgrades. Sale review needs 5 poor matches plus safe depth.</p>{decisions.length?<div className="decision-list">{decisions.map((item,index)=><article key={`${item.action}:${item.title}:${index}`}><strong>{item.action}</strong><div><h3>{item.title}</h3><p>{item.reason}</p></div></article>)}</div>:<Line left={sample<3?`Learning period—play ${3-sample} more match${3-sample===1?'':'es'} before squad judgments.`:'No supported lineup, fit or sale concerns.'} right={sample<3?`${sample}/3`:'Stable'} tone="good"/>}</section>
-    <section className="lower-band"><SectionTitle title="Depth gaps" count={needs.length}/>{needs.length ? <><p className="muted">This section checks numbers only: starters, rotation and cover. It does not judge player quality.</p><div className="needs-list">{needs.map(({code,label,starter,rotation,depth,targetDepth,available}) => <article key={code}><span>{code}</span><div><h3>{label}</h3><p>{depth}/{targetDepth} options · {available} available · Lead: {starter?.name??'None'} ({starter?.overall??0} OVR) · Rotation: {rotation?.name??'Missing'}{rotation?` (${rotation.overall} OVR)`:''}</p></div><strong>{depth}/{targetDepth}</strong></article>)}</div></> : <Line left="Starting, rotation and cover depth are present" right="Covered" tone="good"/>}</section>
-  </>
+  for(const item of starterEvidence) if(item.score.sampleSize>=5&&item.minutes>=300&&item.score.attributes<=attributeFloor&&item.score.performance<=performanceFloor) {
+    const alternative=state.players.filter(player=>player.id!==item.player.id).map(player=>scoreFor(state,player,item.slot)).filter(Number.isFinite).sort((a,b)=>b-a)[0]
+    if(alternative===undefined||alternative<item.score.total+5)decisions.push({action:'Scout profile',title:`${item.slot.position} · ${item.slot.role}`,reason:`This is a bottom-quartile starting slot for both role attributes and supported recent performance, with no internal alternative five points better.`})
+  }
+  return <><section className="lower-band"><SectionTitle title="Evidence briefings" count={decisions.length}/><p className="muted">Selection advice requires 5 rated appearances and 300 minutes. Sale review requires 10 and 600, plus safe depth. Missing evidence never counts as poor evidence.</p>{decisions.length?<div className="decision-list">{decisions.slice(0,10).map((item,index)=><article key={`${item.action}:${item.title}:${index}`}><strong>{item.action}</strong><div><h3>{item.title}</h3><p>{item.reason}</p></div></article>)}</div>:<Line left="No supported selection, pathway or upgrade concern" right={matches.length<5?'Learning':'Stable'} tone="good"/>}</section><section className="lower-band"><SectionTitle title="Depth plan" count={depth.filter(item=>item.shortfall>0).length}/><p className="muted">Each positional unit needs unique starters and one distinct rotation player; goalkeeper needs a backup and third choice. Secondary positions are emergency cover, not another role requirement.</p><div className="needs-list">{depth.map(item=><article key={item.code}><span>{item.code}</span><div><h3>{item.label}</h3><p>{item.depth}/{item.targetDepth} natural options · Rotation: {item.rotation?.name??'Missing'} · Emergency cover: {item.cover?.name??'None'}{item.coverConflict?' (also covers another unit)':''}</p></div><strong className={item.shortfall?'warn':'good'}>{item.shortfall?`${item.shortfall} short`:'Ready'}</strong></article>)}</div></section></>
+}
+
+function Opponent({state}:{state:AnalystState}) {
+  const opponent=state.opponent
+  if(!opponent)return <><PageTitle eyebrow="Match preparation" title="Opponent" note="Waiting for the next fixture"/><section className="lower-band"><Empty>The opponent briefing appears after Live Editor exports the next scheduled fixture.</Empty></section><section className="lower-band"><SectionTitle title="Data coverage"/><SourceHealth state={state}/></section></>
+  const summaries=opponent.players.map(player=>{
+    const exact=player.statistics.filter(stat=>opponent.competitionId&&stat.competitionId===opponent.competitionId)
+    const rows=exact.length?exact:player.statistics
+    const appearances=rows.reduce((sum,stat)=>sum+stat.appearances,0)
+    const rated=rows.filter(stat=>stat.averageRating!==undefined)
+    const ratingAppearances=rated.reduce((sum,stat)=>sum+stat.appearances,0)
+    const ratingWeight=rated.reduce((sum,stat)=>sum+stat.averageRating!*stat.appearances,0)
+    return {player,scope:exact.length?(opponent.competition||'Upcoming competition'):'All competitions',appearances,averageRating:ratingAppearances?ratingWeight/ratingAppearances:undefined,goals:rows.reduce((sum,stat)=>sum+stat.goals,0),assists:rows.reduce((sum,stat)=>sum+stat.assists,0),cleanSheets:rows.reduce((sum,stat)=>sum+stat.cleanSheets,0)}
+  }).sort((a,b)=>b.appearances-a.appearances||b.goals-a.goals)
+  const watch=[...summaries].sort((a,b)=>(b.goals+b.assists)-(a.goals+a.assists)||b.appearances-a.appearances).slice(0,5)
+  const unavailable=opponent.players.filter(player=>player.injured||player.suspended)
+  return <><PageTitle eyebrow="Match preparation" title={opponent.teamName} note={`${date(opponent.date)} · ${opponent.competition||'Competition pending'}`}/><div className="opponent-summary"><section><SectionTitle title="Briefing limits"/><p>Public roster and recorded season totals only. This page does not expose hidden OVR, potential or attributes, and it does not predict pressing, build-up or a starting XI.</p></section><section><SectionTitle title="Exposed context"/><DataGrid values={[["Default shape",opponent.formation],["Roster",opponent.players.length],["Unavailable",unavailable.length],["Captured",date(opponent.capturedAt)]]}/></section></div><section className="lower-band"><SectionTitle title="Players to watch" count={watch.length}/><div className="watch-grid">{watch.map(item=><article key={item.player.id}><span>{item.player.positions[0]||'—'}</span><h3>{item.player.name}</h3><strong>{item.goals} G · {item.assists} A</strong><small>{item.appearances} apps · {item.averageRating?`${item.averageRating.toFixed(2)} avg`:'rating not exposed'} · {item.scope}</small></article>)}</div></section><section className="lower-band"><SectionTitle title="Probable squad" count={summaries.length}/><table><thead><tr><th>Player</th><th>Positions</th><th>Apps</th><th>Avg</th><th>Goals</th><th>Assists</th><th>Status</th></tr></thead><tbody>{summaries.map(item=><tr key={item.player.id}><td><strong>{item.player.name}</strong><small>#{item.player.number??'—'} · {item.player.age??'—'} yrs</small></td><td>{item.player.positions.join(' / ')||'Not exposed'}</td><td>{item.appearances}</td><td>{item.averageRating?.toFixed(2)??'—'}</td><td>{item.goals}</td><td>{item.assists}</td><td>{item.player.injured?'Injured':item.player.suspended?'Suspended':'Available'}</td></tr>)}</tbody></table></section></>
+}
+
+function SourceHealth({state}:{state:AnalystState}) {
+  const sources=state.sync.sources??{}
+  const labels:Record<string,string>={telemetry:'Match telemetry',squad:'Managed squad',tactics:'Tactics',fixtures:'Fixtures',opponent:'Next opponent'}
+  return <div className="source-grid">{(['telemetry','squad','tactics','fixtures','opponent'] as const).map(name=>{const source=sources[name];return <div key={name} className={source?.status??'missing'}><span>{labels[name]}</span><strong>{source?.status==='ready'?`${source.rows} rows`:source?.status??'missing'}</strong><small>{source?.message??(source?.capturedAt?`Updated ${date(source.capturedAt)}`:'Waiting for export')}</small></div>})}</div>
 }
 
 function ScoreEvidence({ score }: { score: RoleScore }) {
@@ -288,7 +309,7 @@ function ScoreEvidence({ score }: { score: RoleScore }) {
     ['Recent ratings',30,score.performance,`Last ${score.sampleSize} current-season rating${score.sampleSize===1?'':'s'}, minutes-weighted when minutes are known`,score.sampleSize>0],
   ] as const
   const used=rows.filter(row=>row[4]),weight=used.reduce((sum,row)=>sum+row[1],0)
-  return <div className="evidence"><p className="evidence-summary"><strong>{used.length===1?'Attributes-only estimate':'Current evidence used'}</strong>This is an analyst estimate, not an FC hidden rating. Missing sources are excluded, never counted as zero.</p>{used.map(([label,rowWeight,value,detail])=><div key={label}><span>{label} · {Math.round(rowWeight/weight*100)}% of this score</span><Meter value={value}/><small>{detail}</small></div>)}{!score.sampleSize&&<div className="evidence-waiting"><span>Waiting for match evidence</span><p>Play and import 3 current-season matches before lineup or squad decisions are shown.</p></div>}</div>
+  return <div className="evidence"><p className="evidence-summary"><strong>{used.length===1?'Attributes-only estimate':'Current evidence used'}</strong>This is an analyst estimate, not an FC hidden rating. Missing sources are excluded, never counted as zero.</p>{used.map(([label,rowWeight,value,detail])=><div key={label}><span>{label} · {Math.round(rowWeight/weight*100)}% of this score</span><Meter value={value}/><small>{detail}</small></div>)}{!score.sampleSize&&<div className="evidence-waiting"><span>Waiting for match evidence</span><p>Selection advice needs 5 rated appearances and 300 minutes; this attribute estimate is not a performance judgment.</p></div>}</div>
 }
 function PageTitle({ eyebrow,title,note }: { eyebrow:string;title:string;note:string }) { return <header className="page-title"><div><p>{eyebrow}</p><h1>{title}</h1></div><span>{note}</span></header> }
 function SectionTitle({ title,count,action,onAction }: { title:string;count?:number;action?:string;onAction?:()=>void }) { return <div className="section-title"><h3>{title}{count !== undefined && <sup>{count}</sup>}</h3>{action && <button onClick={onAction}>{action} →</button>}</div> }
@@ -307,10 +328,10 @@ export default function App() {
   const [view,setView]=useState<View>('Overview')
   const [selectedMatchId,setSelectedMatchId]=useState<string>()
   const [settings,setSettings]=useState(false)
-  const openMatch=(matchId:string)=>{setSelectedMatchId(matchId);setView('Matches')}
+  const openMatch=(matchId:string)=>{setSelectedMatchId(matchId);setView('Performance')}
   useEffect(()=>{void window.fc26.getState().then(setState);return window.fc26.onStateChanged(setState)},[])
   if(!state) return <div className="boot"><i/>Loading career intelligence…</div>
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span>FC</span><div><b>CAREER</b><small>ANALYST / 26</small></div></div><nav>{views.map(item=><button key={item.name} className={view===item.name?'active':''} onClick={()=>setView(item.name)}><span>{item.key}</span>{item.name}</button>)}</nav><div className="side-footer"><div className={`sync-dot ${state.sync.status}`}/><span><b>{state.sync.status}</b><small>{state.sync.message}</small></span><button title="Settings" onClick={()=>setSettings(true)}>⚙</button></div></aside>
-    <main>{view==='Overview'&&<Overview state={state} setView={setView}/>} {view==='Squad'&&<Squad state={state}/>} {view==='Matches'&&<Matches state={state} onState={setState} requestedId={selectedMatchId}/>} {view==='Trends'&&<Trends state={state} openMatch={openMatch}/>} {view==='Tactics'&&<Tactics state={state} onState={setState}/>} {view==='Recommendations'&&<Recommendations state={state}/>}</main>
+    <main>{view==='Overview'&&<Overview state={state} setView={setView}/>} {view==='Performance'&&<Performance state={state} onState={setState} requestedId={selectedMatchId} openMatch={openMatch}/>} {view==='Squad'&&<Squad state={state}/>} {view==='Tactics'&&<Tactics state={state} onState={setState}/>} {view==='Opponent'&&<Opponent state={state}/>}</main>
     {settings&&<Settings state={state} close={()=>setSettings(false)} onState={setState}/>}</div>
 }

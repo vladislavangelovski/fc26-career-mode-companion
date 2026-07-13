@@ -5,7 +5,7 @@ import os from 'node:os'
 import sharp from 'sharp'
 import { createWorker, type Worker } from 'tesseract.js'
 import type { Match, MatchScreenshot, OCRValue, ScreenshotImportResult } from '../src/shared/types'
-import { applyConfirmedOCR, classifyOCR, extractExpectedGoalsPair, extractOCRValues } from '../src/shared/ocr'
+import { applyConfirmedOCR, classifyOCR, extractOCRValues, extractTeamMetricPairs } from '../src/shared/ocr'
 import { CareerStore } from './store'
 
 let worker: Worker | undefined
@@ -64,8 +64,9 @@ export async function importScreenshots(store: CareerStore, matchId: string, sou
     const screenshot: MatchScreenshot = { id, fileName: path.basename(source), path: destination, sha256: hash, screenType, width: 2560, height: 1440 }
     match.screenshots.push(screenshot)
     const values=extractOCRValues(recognition.data.text,recognition.data.confidence,id,player?.id,screenType==='player-detail'?'player':'team')
-    const xgPair=screenType==='team-summary'?extractExpectedGoalsPair(recognition.data.text,recognition.data.confidence,id,match.venue==='home'?true:match.venue==='away'?false:undefined):[]
-    match.ocr.values.push(...(xgPair.length?values.filter(value=>value.field!=='expectedGoals'):values),...xgPair)
+    const pairs=screenType==='team-summary'?extractTeamMetricPairs(recognition.data.text,recognition.data.confidence,id,match.venue==='home'?true:match.venue==='away'?false:undefined):[]
+    const pairedFields=new Set(pairs.map(value=>value.field))
+    match.ocr.values.push(...values.filter(value=>!pairedFields.has(value.field)),...pairs)
     result.imported++
   }
   match.captureLevel = result.imported ? 'played' : match.captureLevel

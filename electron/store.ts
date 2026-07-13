@@ -6,7 +6,7 @@ import os from 'node:os'
 import type { AnalystState } from '../src/shared/types'
 import { migrateState } from '../src/shared/trends'
 
-const VERSION = 2
+const VERSION = 3
 const desktop = path.join(os.homedir(), 'Desktop')
 const directory = path.join(app.getPath('appData'), 'FC26 Career Analyst')
 const liveEditorDirectory = path.join(directory, 'Live Editor')
@@ -111,7 +111,7 @@ export class CareerStore {
   async exportTo(destination: string) { await this.save(); await copyFile(this.file, destination) }
   async restoreFrom(source: string) {
     const restored = JSON.parse(await readFile(source, 'utf8')) as AnalystState
-    if (![1, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
+    if (![1, 2, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
     await this.save()
     restored.settings = { ...this.state.settings, ...restored.settings }
     this.state = migrateState(restored)

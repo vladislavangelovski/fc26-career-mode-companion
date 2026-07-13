@@ -20,21 +20,28 @@ export function extractOCRValues(text: string, confidence: number, screenshotId:
   return results
 }
 
-export function extractExpectedGoalsPair(text:string,confidence:number,screenshotId:string,teamOnLeft?:boolean):OCRValue[] {
+export function extractTeamMetricPairs(text:string,confidence:number,screenshotId:string,teamOnLeft?:boolean):OCRValue[] {
   if(teamOnLeft===undefined)return []
-  for(const line of text.split(/\r?\n/).map(value=>value.trim())) {
-    const pair=line.match(/(-?\d+(?:[.,]\d+)?)\s+(?:expected\s+goals|xg)\s+(-?\d+(?:[.,]\d+)?)/i)??line.match(/(?:expected\s+goals|xg)\s+(-?\d+(?:[.,]\d+)?)\s+(-?\d+(?:[.,]\d+)?)/i)
+  const aliases:Record<string,string>={'shots on target':'shotsOnTarget','pass accuracy':'passAccuracy','expected goals':'expectedGoals',possession:'possession',interceptions:'interceptions',tackles:'tacklesWon',passes:'passes',shots:'shots',xg:'expectedGoals'}
+  const results:OCRValue[]=[]
+  for(const line of text.split(/\r?\n/).map(value=>value.trim()).filter(Boolean)) for(const [label,field] of Object.entries(aliases).sort(([a],[b])=>b.length-a.length)) {
+    if(results.some(value=>value.field===field&&value.scope==='team'))continue
+    const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')
+    const pair=line.match(new RegExp(`(-?\\d+(?:[.,]\\d+)?)%?\\s+${escaped}\\s+(-?\\d+(?:[.,]\\d+)?)%?`,'i'))??line.match(new RegExp(`${escaped}\\s+(-?\\d+(?:[.,]\\d+)?)%?\\s+(-?\\d+(?:[.,]\\d+)?)%?`,'i'))
     if(!pair)continue
     const values=[Number(pair[1].replace(',','.')),Number(pair[2].replace(',','.'))]
-    const team=values[teamOnLeft?0:1],against=values[teamOnLeft?1:0]
-    return [{id:`${screenshotId}:xg`,screenshotId,scope:'team',field:'expectedGoals',value:team,confidence:Math.round(confidence),included:true},{id:`${screenshotId}:xga`,screenshotId,scope:'team',field:'expectedGoalsAgainst',value:against,confidence:Math.round(confidence),included:true}]
+    const team=values[teamOnLeft?0:1],opponent=values[teamOnLeft?1:0]
+    results.push({id:`${screenshotId}:${field}:team`,screenshotId,scope:'team',field,value:team,confidence:Math.round(confidence),included:true},{id:`${screenshotId}:${field}:opponent`,screenshotId,scope:'opponent',field,value:opponent,confidence:Math.round(confidence),included:true})
   }
-  return []
+  return results
 }
+
+export const extractExpectedGoalsPair=(text:string,confidence:number,screenshotId:string,teamOnLeft?:boolean)=>extractTeamMetricPairs(text,confidence,screenshotId,teamOnLeft).filter(value=>value.field==='expectedGoals')
 
 export function applyConfirmedOCR(match: Match, values: OCRValue[]) {
   match.ocr.values = values
   match.teamStatistics = {}
+  match.opponentStatistics = {}
   for (const appearance of match.appearances) {
     appearance.detailedMetrics = {}
     const telemetry = appearance.telemetry ?? { rating: appearance.rating, goals: appearance.goals, assists: appearance.assists, saves: appearance.saves }
@@ -51,7 +58,8 @@ export function applyConfirmedOCR(match: Match, values: OCRValue[]) {
       const appearance = match.appearances.find(item => item.playerId === value.playerId)
       if (!appearance) continue
       if (!['rating','goals','assists','saves'].includes(value.field)) appearance.detailedMetrics[value.field] = numeric
-    } else match.teamStatistics[value.field] = numeric
+    } else if(value.scope==='opponent') match.opponentStatistics[value.field] = numeric
+    else match.teamStatistics[value.field] = numeric
   }
   match.ocr.status = 'confirmed'
 }

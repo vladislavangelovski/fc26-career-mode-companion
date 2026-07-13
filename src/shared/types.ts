@@ -29,6 +29,7 @@ export interface Player {
   fitness?: number
   sharpness?: number
   contractEnd?: string
+  contractMonths?: number
   wage?: number
   snapshots: PlayerSnapshot[]
 }
@@ -39,6 +40,8 @@ export interface Appearance {
   playerId: string
   minutes: number
   position?: string
+  plannedRole?: string
+  plannedFocus?: string
   lineupStatus?: string
   lineupStatusSource?: string
   overall?: number
@@ -57,7 +60,7 @@ export interface OCRValue {
   id: string
   screenshotId: string
   playerId?: string
-  scope: 'team' | 'player'
+  scope: 'team' | 'opponent' | 'player'
   unmatchedPlayer?: boolean
   field: string
   value: string | number
@@ -83,14 +86,58 @@ export interface Match {
   competition: string
   opponent: string
   venue?: 'home' | 'away'
+  tacticId?: string
+  formation?: string
   teamScore?: number
   opponentScore?: number
   captureLevel: 'telemetry' | 'played'
   appearances: Appearance[]
   teamStatistics: Record<string, number>
+  opponentStatistics: Record<string, number>
   screenshots: MatchScreenshot[]
   ocr: { status: 'none' | 'processing' | 'review' | 'confirmed'; values: OCRValue[] }
 }
+
+export interface OpponentPlayerStatistics {
+  competitionId?: string
+  competition: string
+  appearances: number
+  averageRating?: number
+  goals: number
+  assists: number
+  yellowCards: number
+  redCards: number
+  cleanSheets: number
+  saves: number
+  goalsConceded: number
+}
+
+export interface OpponentPlayer {
+  id: string
+  name: string
+  age?: number
+  number?: number
+  positions: string[]
+  lineupPosition?: string
+  injured: boolean
+  suspended: boolean
+  statistics: OpponentPlayerStatistics[]
+}
+
+export interface OpponentSnapshot {
+  capturedAt: string
+  fixtureId?: string
+  teamId: string
+  teamName: string
+  date?: string
+  competitionId?: string
+  competition?: string
+  formation?: string
+  players: OpponentPlayer[]
+}
+
+export type SourceName = 'telemetry' | 'squad' | 'tactics' | 'fixtures' | 'opponent'
+export interface SourceStatus { status: 'ready' | 'missing' | 'error'; rows: number; capturedAt?: string; message?: string }
 
 export interface TacticSlot {
   id: string
@@ -140,8 +187,9 @@ export interface AnalystState {
   players: Player[]
   matches: Match[]
   tactics: Tactic[]
+  opponent?: OpponentSnapshot
   settings: { telemetryPath: string; squadPath: string; tacticsPath: string }
-  sync: { status: 'watching' | 'importing' | 'error'; lastImport?: string; message?: string }
+  sync: { status: 'watching' | 'importing' | 'error'; lastImport?: string; message?: string; sources?: Partial<Record<SourceName, SourceStatus>> }
 }
 
 export interface ScreenshotImportResult { imported: number; duplicates: number; rejected: string[] }

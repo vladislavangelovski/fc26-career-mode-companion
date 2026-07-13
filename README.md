@@ -1,6 +1,6 @@
 # FC 26 Career Analyst
 
-A private, offline Windows companion for FC 26 Manager Career. It watches Live Editor CSV exports, preserves each career separately, enriches played matches through reviewed screenshot OCR, and produces explainable role-fit and squad-depth recommendations for whichever save is currently loaded.
+A private, offline Windows companion for FC 26 Manager Career. It watches read-only Live Editor CSV exports, preserves each career separately, enriches played matches through reviewed screenshot OCR, and connects match review, squad planning, tactics and next-opponent preparation.
 
 ## Run the app
 
@@ -21,19 +21,25 @@ Existing single-career data is migrated into the new profile layout without bein
 
 The packaged app includes `career_snapshot.lua` and `match_telemetry.lua`. On startup it refreshes them automatically in `C:\FC 26 Live Editor\lua\autorun` when that standard Live Editor folder exists. Launch FC through Live Editor and load any Manager Career save; no F9 or manual execution is needed. Return to the central hub after matches so FC can finish updating statistics. Both scripts only read game data.
 
+The snapshot script exports the managed squad, fixtures, active tactic and the next opponent's public roster and recorded season totals. It deliberately does not export hidden opponent OVR, potential, attributes or wages. The telemetry script preserves the pre-match formation and planned FC role alongside the result and player deltas.
+
 If Live Editor is installed elsewhere, copy those two files from this repository's `live_editor` folder into that installation's `lua\autorun` folder once.
 
 Starter/substitute status is labelled as inferred because FC exposes played minutes but not the substitution event. Unknown minutes remain blank rather than being assumed to be 90. Morale, fitness, sharpness, and other fields remain blank when this Live Editor build does not expose a reliable value.
 
-## Recommendations
+## Manager workflow
 
-The current imported XI is preserved while the app learns. Lineup, bench, system-fit, sale, and upgrade decisions require at least three current-season matches with ratings; sale review requires five. Role fit combines imported FC attributes for the exact FC role with the last five current-season ratings (70/30 when both exist). It is an analyst estimate, not an FC hidden rating.
+The navigation is organised around **Overview**, **Performance**, **Squad**, **Tactics**, and **Opponent**. Matches and trends share the Performance workspace; evidence briefings and depth planning live with the Squad instead of on a disconnected recommendations page.
 
-Primary and secondary positions are hard eligibility rules. A player is only described as a system mismatch when none of those imported positions matches the current system. Depth is separate from quality: it checks starter, rotation, and cover numbers by positional unit, while upgrade targets are relative to the level of the active squad.
+Role estimates combine imported FC attributes for the exact role with the last five current-season ratings (70/30 when both exist). They are supporting analyst estimates, not FC hidden ratings. Selection advice requires at least five rated appearances and 300 minutes. Sale or replacement review requires ten rated appearances and 600 minutes plus safe natural-position depth. Missing data is excluded rather than scored as zero.
+
+Primary and secondary positions are hard eligibility rules. Depth is measured by positional unit: unique starters, a distinct rotation player, a third goalkeeper and separately labelled emergency cover. One versatile reserve cannot silently satisfy several rotation requirements.
 
 ## Played-match screenshots
 
-Open a match in **Matches**, choose **Add screenshot batch**, and select English 2560×1440 captures. The workflow expects 2–3 team summary pages plus one detail page for every participant. Images are checked, SHA-256 deduplicated, preprocessed, and OCRed locally. Correct the review table and confirm it before any extracted value enters analysis. Simulated matches need no screenshots.
+Open a match in **Performance**, choose **Add screenshot batch**, and select English 2560×1440 captures. Images are checked, SHA-256 deduplicated, preprocessed, and OCRed locally. Team-summary rows are reviewed for both clubs, enabling xG, xGA, xGD, shooting, possession, passing and defensive comparisons. Correct the review table and confirm it before any extracted value enters analysis. Screenshots are optional; automatic telemetry remains useful without them.
+
+The app does not invent event-location analytics. Shot maps, pass networks, xT, VAEP, PPDA, pressure maps and off-ball tracking remain unavailable unless FC or Live Editor exposes reliable action coordinates in the future.
 
 ## Verification and installer
 

@@ -44,17 +44,24 @@ describe('recommendation scoring', () => {
     const slots=[{id:'left',position:'CM'},{id:'right',position:'CM'}] as TacticSlot[]
     const needs=squadNeeds([player('A'),player('B')],slots)
     expect(needs).toHaveLength(1)
-    expect(needs[0]).toMatchObject({code:'CM',depth:2,targetDepth:4})
-    expect(squadNeeds([player('A'),player('B'),player('C'),player('D')],slots)).toHaveLength(0)
+    expect(needs[0]).toMatchObject({code:'CM',depth:2,targetDepth:3})
+    expect(squadNeeds([player('A'),player('B'),player('C')],slots)).toHaveLength(0)
   })
   it('does not recommend another goalkeeper when the unit already has depth', () => {
     const keepers=Array.from({length:5},(_,index)=>({...player(String(index)),positions:['GK']}))
     expect(squadNeeds(keepers,[{id:'gk',position:'GK'} as TacticSlot])).toHaveLength(0)
   })
+  it('does not count one versatile reserve as rotation depth for two units',()=>{
+    const cm={...player('CM'),positions:['CM']},cam={...player('CAM'),positions:['CAM']},utility={...player('U'),positions:['CM','CAM']}
+    const needs=squadNeeds([cm,cam,utility],[{id:'cm',position:'CM',playerId:'CM'},{id:'cam',position:'CAM',playerId:'CAM'}] as TacticSlot[])
+    expect(needs).toHaveLength(1)
+    expect(['CM','CAM']).toContain(needs[0].code)
+  })
   it('requires evidence before bench or sale advice', () => {
-    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:1,alternativeGap:0,depthSafe:true})).toBeUndefined()
-    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:3,alternativeGap:0,depthSafe:true})).toBe('Consider bench')
-    expect(playerDecision({starter:false,fitGap:-8,performance:55,sample:5,alternativeGap:0,depthSafe:true})).toBe('Review sale')
+    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:4,minutes:360,alternativeGap:0,depthSafe:true})).toBeUndefined()
+    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:5,minutes:299,alternativeGap:0,depthSafe:true})).toBeUndefined()
+    expect(playerDecision({starter:true,fitGap:0,performance:55,sample:5,minutes:300,alternativeGap:0,depthSafe:true})).toBe('Consider bench')
+    expect(playerDecision({starter:false,fitGap:-8,performance:55,sample:10,minutes:600,alternativeGap:0,depthSafe:true})).toBe('Review sale')
   })
   it('scores a normal goalkeeper as a goalkeeper, not a passer', () => {
     const role=ROLE_LIBRARY.find(item=>item.id==='gk')!
