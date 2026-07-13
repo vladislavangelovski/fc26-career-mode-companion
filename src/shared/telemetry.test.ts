@@ -45,4 +45,13 @@ describe('telemetry merge', () => {
     mergeFixtures(state,[{fixture_id:'40',career_date:'2025-07-29',competition:'Cup',opponent:'Málaga',home_away:'away'}])
     expect(state.matches[0]).toMatchObject({fixtureId:'40',opponent:'Málaga',venue:'away'})
   })
+  it('refreshes delayed match facts and never invents 90 minutes', () => {
+    const state=initialTestState()
+    const base={match_id:'m1',career_date:'2025-08-01',player_id:'1',player:'Keeper',played_position:'0',goals:'0',assists:'0',yellow_cards:'0',red_cards:'0',second_yellows:'0',saves:'3',goals_conceded:'1',rating:'7'}
+    mergeTelemetry(state,[base])
+    expect(state.matches[0].appearances[0].minutes).toBe(0)
+    mergeTelemetry(state,[{...base,fixture_id:'99',opponent:'Fiorentina',competition:'League',home_away:'home',team_score:'2',opponent_score:'1',minutes:'90'}])
+    expect(state.matches[0]).toMatchObject({fixtureId:'99',opponent:'Fiorentina',competition:'League',venue:'home',teamScore:2,opponentScore:1})
+    expect(state.matches[0].appearances[0].minutes).toBe(90)
+  })
 })

@@ -33,6 +33,7 @@
     "appId": "local.fc26.career-analyst",
     "productName": "FC 26 Career Analyst",
     "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "extraResources": [{ "from": "live_editor", "to": "live_editor" }],
     "asarUnpack": ["node_modules/sharp/**/*", "node_modules/@img/**/*", "node_modules/tesseract.js/**/*", "node_modules/tesseract.js-core/**/*", "node_modules/@tesseract.js-data/**/*"],
     "directories": { "output": "release" },
     "win": { "target": "nsis", "signAndEditExecutable": false },

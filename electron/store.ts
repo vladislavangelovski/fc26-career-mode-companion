@@ -61,6 +61,7 @@ export class CareerStore {
         this.profileId = this.state.career.profileId || (this.state.career.teamId ? `team-${this.state.career.teamId}` : 'unlinked')
       }
     }
+    this.state.settings = { ...initialState().settings, ...this.state.settings }
     this.state.career.profileId = this.profileId
     this.state.tactics = this.state.tactics.filter(tactic => tactic.id !== 'default' || tactic.slots.some(slot => slot.imported))
     for (const [key, name] of Object.entries(exportNames) as [keyof AnalystState['settings'], string][]) {
@@ -112,6 +113,7 @@ export class CareerStore {
     const restored = JSON.parse(await readFile(source, 'utf8')) as AnalystState
     if (![1, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
     await this.save()
+    restored.settings = { ...this.state.settings, ...restored.settings }
     this.state = migrateState(restored)
     this.profileId = this.state.career.profileId || (this.state.career.teamId ? `team-${this.state.career.teamId}` : `restored-${Date.now()}`)
     this.state.career.profileId = this.profileId

@@ -10,11 +10,16 @@ describe('trend history', () => {
     const raw = initialTestState() as AnalystState
     raw.schemaVersion = 1
     raw.matches = [{ ...fixture('old','2025-08-10'), seasonId: undefined } as unknown as Match]
+    delete (raw.matches[0] as Partial<Match>).screenshots
+    delete (raw as Partial<AnalystState>).tactics
+    delete (raw as Partial<AnalystState>).sync
     raw.players = [{ id:'p1',name:'Player',positions:['ST'],overall:71,potential:80,attributes:{},familiarity:{},injured:false,suspended:false,snapshots:[{capturedAt:'2025-08-10T10:00:00Z',overall:70}] }]
     const migrated=migrateState(raw)
     expect(migrated.schemaVersion).toBe(2)
     expect(migrated.matches).toHaveLength(1)
     expect(migrated.matches[0].seasonId).toBe('2025/26')
+    expect(migrated.matches[0].screenshots).toEqual([])
+    expect(migrated.tactics).toEqual([])
     expect(migrated.players[0].snapshots[0]).toMatchObject({potential:80,careerDate:'2025-08-10'})
   })
 

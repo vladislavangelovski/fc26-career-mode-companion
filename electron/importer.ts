@@ -69,9 +69,12 @@ export class Importer {
       if (!id) continue
       const current = this.store.state.players.find(p => p.id === id)
       const attributes = Object.fromEntries(Object.entries(row).filter(([key, value]) => !fixed.has(key) && value !== '').map(([key, value]) => [key, n(value)]))
-      const positions = [row.position, ...Array.from({ length: 7 }, (_, i) => row[`preferred_position_${i + 1}`])].map(position).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i)
-      const snapshot = { capturedAt: row.captured_at, careerDate: row.career_date, overall: n(row.overall), potential: n(row.potential), form: row.form === '' ? undefined : n(row.form), morale: row.morale === '' ? undefined : n(row.morale), fitness: row.fitness === '' ? undefined : n(row.fitness), sharpness: row.sharpness === '' ? undefined : n(row.sharpness) }
-      const player: Player = { id, name: row.player, age: n(row.age), number: n(row.jersey_number), lineupPosition: row.position, positions, overall: n(row.overall), potential: n(row.potential), attributes, familiarity: current?.familiarity ?? {}, injured: n(row.injury) > 0, suspended: n(row.suspension) > 0, form: snapshot.form, morale: snapshot.morale, fitness: snapshot.fitness, sharpness: snapshot.sharpness, contractEnd: row.contract_end || undefined, wage: n(row.wage), snapshots: current?.snapshots ?? [] }
+      const preferred = Array.from({ length: 7 }, (_, i) => row[`preferred_position_${i + 1}`]).map(position).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i)
+      const lineupPosition = position(row.position)
+      const positions = preferred.length ? preferred : lineupPosition ? [lineupPosition] : []
+      const exposed = (value:string) => value === '' || n(value) <= 5 ? undefined : n(value)
+      const snapshot = { capturedAt: row.captured_at || new Date().toISOString(), careerDate: row.career_date, overall: n(row.overall), potential: row.potential === '' ? undefined : n(row.potential), form: exposed(row.form), morale: exposed(row.morale), fitness: exposed(row.fitness), sharpness: exposed(row.sharpness) }
+      const player: Player = { id, name: row.player, age: n(row.age), number: n(row.jersey_number), lineupPosition: row.position, positions, overall: n(row.overall), potential: snapshot.potential, attributes, familiarity: current?.familiarity ?? {}, injured: n(row.injury) > 0, suspended: n(row.suspension) > 0, form: snapshot.form, morale: snapshot.morale, fitness: snapshot.fitness, sharpness: snapshot.sharpness, contractEnd: row.contract_end || undefined, wage: n(row.wage), snapshots: current?.snapshots ?? [] }
       if (!player.snapshots.some(item => item.capturedAt === snapshot.capturedAt)) player.snapshots.push(snapshot)
       if (current) Object.assign(current, player); else this.store.state.players.push(player)
       this.store.state.career = { ...this.store.state.career, profileId: careerProfileId(row) || this.store.state.career.profileId, teamId: row.team_id, teamName: row.team || this.store.state.career.teamName }
@@ -90,7 +93,10 @@ export class Importer {
       })
       const importedName = formationName(tacticRows.map(row => row.position)) || tacticRows[0].formation_name || 'Imported formation'
       const tactic: Tactic = { id, name: importedName, formation: importedName, slots, instructions: {}, corrected: existing?.corrected ?? false }
-      if (existing?.corrected) tactic.slots = slots.map(slot => existing.slots.find(s => s.id === slot.id) ?? slot)
+      if (existing?.corrected) tactic.slots = slots.map(slot => {
+        const manual = existing.slots.find(saved => saved.id === slot.id && saved.position === slot.position)
+        return manual ? { ...slot, role: manual.role, focus: manual.focus, playerId: manual.playerId } : slot
+      })
       if (existing) Object.assign(existing, tactic); else this.store.state.tactics.push(tactic)
     }
   }

@@ -5,16 +5,32 @@ export const positionAdjustedScore = (player: Player, position: string, score: n
   return index<0 ? Number.NEGATIVE_INFINITY : score-Math.min(index,3)*4
 }
 
+const role = (id:string,name:string,eligiblePositions:string[],attributeWeights:Record<string,number>):RoleDefinition => ({id,name,eligiblePositions,attributeWeights,performanceWeights:{rating:100}})
 export const ROLE_LIBRARY: RoleDefinition[] = [
-  { id: 'gk', name: 'Goalkeeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 25, gkhandling: 20, gkpositioning: 20, gkdiving: 20, reactions: 10, composure: 5 }, performanceWeights: { saves: 60, rating: 40 } },
-  { id: 'gk-sweeper', name: 'Sweeper Keeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 20, gkhandling: 15, gkpositioning: 20, gkdiving: 15, gkkicking: 15, shortpassing: 10, composure: 5 }, performanceWeights: { saves: 50, passAccuracy: 20, rating: 30 } },
-  { id: 'gk-ball', name: 'Ball-Playing Keeper', eligiblePositions: ['GK'], attributeWeights: { gkreflexes: 20, gkhandling: 18, gkpositioning: 18, shortpassing: 16, longpassing: 14, composure: 14 }, performanceWeights: { saves: 55, passAccuracy: 25, rating: 20 } },
-  { id: 'wide-back', name: 'Wide Back', eligiblePositions: ['LB', 'RB'], attributeWeights: { stamina: 18, sprintspeed: 18, crossing: 16, standingtackle: 16, interceptions: 16, ballcontrol: 16 }, performanceWeights: { tacklesWon: 25, interceptions: 20, crossesCompleted: 20, passAccuracy: 15, rating: 20 } },
-  { id: 'inverted-wingback', name: 'Inverted Wingback', eligiblePositions: ['LB', 'RB'], attributeWeights: { shortpassing: 20, vision: 18, ballcontrol: 18, composure: 16, interceptions: 14, stamina: 14 }, performanceWeights: { passAccuracy: 30, progressivePasses: 25, interceptions: 20, rating: 25 } },
-  { id: 'box-crasher', name: 'Box Crasher', eligiblePositions: ['CM', 'CAM'], attributeWeights: { positioning: 20, stamina: 18, finishing: 17, reactions: 16, ballcontrol: 15, shortpassing: 14 }, performanceWeights: { goals: 30, shotsOnTarget: 20, touchesInBox: 20, rating: 30 } },
-  { id: 'versatile-forward', name: 'Versatile Forward', eligiblePositions: ['ST', 'LW', 'RW', 'LM', 'RM'], attributeWeights: { finishing: 20, positioning: 18, acceleration: 16, ballcontrol: 16, shortpassing: 15, stamina: 15 }, performanceWeights: { goals: 30, assists: 20, chancesCreated: 20, rating: 30 } },
-  { id: 'centre-back', name: 'Defender', eligiblePositions: ['CB'], attributeWeights: { defensiveawareness: 22, standingtackle: 20, interceptions: 18, strength: 15, headingaccuracy: 15, composure: 10 }, performanceWeights: { tacklesWon: 25, interceptions: 25, aerialDuelsWon: 20, rating: 30 } },
-  { id: 'playmaker', name: 'Playmaker', eligiblePositions: ['CM', 'CAM', 'CDM'], attributeWeights: { vision: 22, shortpassing: 20, longpassing: 18, ballcontrol: 15, composure: 15, reactions: 10 }, performanceWeights: { chancesCreated: 30, progressivePasses: 25, passAccuracy: 20, rating: 25 } },
+  role('gk','Goalkeeper',['GK'],{gkreflexes:25,gkhandling:20,gkpositioning:20,gkdiving:20,reactions:10,composure:5}),
+  role('gk-sweeper','Sweeper Keeper',['GK'],{gkreflexes:20,gkhandling:15,gkpositioning:20,gkdiving:15,gkkicking:15,shortpassing:10,composure:5}),
+  role('gk-ball','Ball-Playing Keeper',['GK'],{gkreflexes:20,gkhandling:18,gkpositioning:18,shortpassing:16,longpassing:14,composure:14}),
+  role('fullback','Fullback',['LB','RB'],{defensiveawareness:20,standingtackle:18,interceptions:17,stamina:17,sprintspeed:14,shortpassing:14}),
+  role('wingback','Wingback',['LB','RB'],{stamina:20,sprintspeed:18,crossing:18,standingtackle:16,interceptions:14,ballcontrol:14}),
+  role('inverted-wingback','Inverted Wingback',['LB','RB'],{shortpassing:20,vision:18,ballcontrol:18,composure:16,interceptions:14,stamina:14}),
+  role('centre-back','Defender',['CB'],{defensiveawareness:22,standingtackle:20,interceptions:18,strength:15,headingaccuracy:15,composure:10}),
+  role('stopper','Stopper',['CB'],{standingtackle:22,aggression:18,strength:18,interceptions:17,defensiveawareness:15,headingaccuracy:10}),
+  role('ball-playing-defender','Ball-Playing Defender',['CB'],{defensiveawareness:18,standingtackle:17,composure:17,shortpassing:17,longpassing:16,interceptions:15}),
+  role('wide-back','Wide Back',['CB'],{defensiveawareness:20,standingtackle:17,interceptions:16,sprintspeed:14,shortpassing:13,crossing:10,strength:10}),
+  role('holding','Holding',['CDM','CM'],{defensiveawareness:20,interceptions:20,standingtackle:18,stamina:16,composure:14,shortpassing:12}),
+  role('deep-playmaker','Deep-Lying Playmaker',['CDM','CM'],{vision:20,shortpassing:20,longpassing:18,composure:16,ballcontrol:14,interceptions:12}),
+  role('box-to-box','Box-to-Box',['CM'],{stamina:22,shortpassing:16,ballcontrol:15,reactions:14,standingtackle:12,positioning:11,finishing:10}),
+  role('box-crasher','Box Crasher',['CDM','CM','CAM'],{positioning:20,stamina:18,finishing:17,reactions:16,ballcontrol:15,shortpassing:14}),
+  role('playmaker','Playmaker',['CM','CAM','CDM'],{vision:22,shortpassing:20,longpassing:18,ballcontrol:15,composure:15,reactions:10}),
+  role('wide-midfielder','Wide Midfielder',['LM','RM'],{stamina:20,crossing:18,shortpassing:17,ballcontrol:16,sprintspeed:15,standingtackle:14}),
+  role('winger','Winger',['LM','RM','LW','RW'],{acceleration:18,sprintspeed:17,dribbling:18,crossing:17,ballcontrol:16,stamina:14}),
+  role('wide-playmaker','Wide Playmaker',['LM','RM','LW','RW'],{vision:22,crossing:18,shortpassing:18,ballcontrol:16,dribbling:14,composure:12}),
+  role('inside-forward','Inside Forward',['LM','RM','LW','RW'],{finishing:20,positioning:18,dribbling:17,acceleration:16,ballcontrol:15,reactions:14}),
+  role('shadow-striker','Shadow Striker',['CAM'],{positioning:22,finishing:20,reactions:17,acceleration:15,ballcontrol:14,stamina:12}),
+  role('advanced-forward','Advanced Forward',['ST'],{finishing:22,positioning:20,acceleration:16,sprintspeed:14,dribbling:14,ballcontrol:14}),
+  role('poacher','Poacher',['ST'],{finishing:28,positioning:25,reactions:18,acceleration:12,ballcontrol:10,volleys:7}),
+  role('false-nine','False 9',['ST'],{vision:21,shortpassing:20,ballcontrol:19,dribbling:16,positioning:14,composure:10}),
+  role('target-forward','Target Forward',['ST'],{strength:22,headingaccuracy:20,positioning:18,finishing:16,ballcontrol:14,jumping:10}),
 ]
 
 const weighted = (values: Record<string, number>, weights: Record<string, number>) => {
@@ -25,37 +41,28 @@ const weighted = (values: Record<string, number>, weights: Record<string, number
   return weight ? total / weight : 0
 }
 
-function recentPerformance(appearances: Appearance[], weights: Record<string, number>) {
-  const recent = appearances.filter(a => a.minutes > 0).slice(-5)
-  if (!recent.length) return { score: 50, sample: 0, detailed: false }
-  let score = 0, minutes = 0, detailed = false
+function recentPerformance(appearances: Appearance[]) {
+  const recent = appearances.filter(a => a.rating !== undefined).slice(-5)
+  if (!recent.length) return { score: 0, sample: 0 }
+  let score = 0, minutes = 0
   for (const appearance of recent) {
-    const metrics = { ...appearance.detailedMetrics, goals: appearance.goals * 90 / appearance.minutes, assists: appearance.assists * 90 / appearance.minutes, saves: appearance.saves * 90 / appearance.minutes, rating: (appearance.rating ?? 5) * 10 }
-    detailed ||= Object.keys(appearance.detailedMetrics).length > 0
-    const performance = detailed ? weighted(metrics, weights) : (appearance.rating ?? 5) * 10
-    score += performance * appearance.minutes
-    minutes += appearance.minutes
+    const weight = appearance.minutes > 0 ? appearance.minutes : 1
+    score += appearance.rating! * 10 * weight
+    minutes += weight
   }
-  return { score: minutes ? score / minutes : 50, sample: recent.length, detailed }
+  return { score: score / minutes, sample: recent.length }
 }
 
 export function scorePlayer(player: Player, role: RoleDefinition, appearances: Appearance[]): RoleScore {
   if (player.injured || player.suspended) return { playerId: player.id, roleId: role.id, total: 0, attributes: 0, performance: 0, condition: 0, familiarity: 0, sampleSize: 0, confidence: 'Basic', missingEvidence: [], excluded: player.injured ? 'Injured' : 'Suspended' }
   const roleAttributes = weighted(player.attributes, role.attributeWeights)
   const attributes = roleAttributes || player.overall
-  const recent = recentPerformance(appearances.filter(a => a.playerId === player.id), role.performanceWeights)
-  const conditionParts = [[player.fitness,.4],[player.sharpness,.3],[player.morale,.2],[player.form !== undefined && player.form > 5 ? player.form : undefined,.1]] as [number | undefined, number][]
-  const exposedCondition = conditionParts.filter(([value]) => value !== undefined) as [number, number][]
-  const conditionWeight = exposedCondition.reduce((sum, [, weight]) => sum + weight, 0)
-  const condition = conditionWeight ? exposedCondition.reduce((sum, [value, weight]) => sum + value * weight, 0) / conditionWeight : 0
-  const familiarity = player.familiarity[role.id]
-  const components: [number, number][] = [[attributes,55]]
-  if (recent.sample) components.push([recent.score,25])
-  if (conditionWeight) components.push([condition,15])
-  if (familiarity !== undefined) components.push([familiarity,5])
+  const recent = recentPerformance(appearances.filter(a => a.playerId === player.id))
+  const components: [number, number][] = [[attributes,70]]
+  if (recent.sample) components.push([recent.score,30])
   const total = components.reduce((sum, [score, weight]) => sum + score * weight, 0) / components.reduce((sum, [, weight]) => sum + weight, 0)
-  const missingEvidence = [!roleAttributes && 'role attributes (using OVR)', player.fitness === undefined && 'fitness', player.sharpness === undefined && 'sharpness', player.morale === undefined && 'morale', (player.form === undefined || player.form <= 5) && 'form', !recent.sample && 'recent performance', !recent.detailed && 'detailed match metrics', familiarity === undefined && 'role familiarity'].filter(Boolean) as string[]
-  return { playerId: player.id, roleId: role.id, total: Math.round(total * 10) / 10, attributes: Math.round(attributes * 10) / 10, performance: Math.round(recent.score * 10) / 10, condition: Math.round(condition * 10) / 10, familiarity: familiarity ?? 0, sampleSize: recent.sample, confidence: recent.detailed && recent.sample >= 3 && missingEvidence.length < 2 ? 'Strong' : recent.sample ? 'Standard' : 'Basic', missingEvidence }
+  const missingEvidence = [!roleAttributes && 'role attributes (using OVR)', !recent.sample && 'recent match ratings'].filter(Boolean) as string[]
+  return { playerId: player.id, roleId: role.id, total: Math.round(total * 10) / 10, attributes: Math.round(attributes * 10) / 10, performance: Math.round(recent.score * 10) / 10, condition: 0, familiarity: 0, sampleSize: recent.sample, confidence: recent.sample >= 5 ? 'Strong' : recent.sample >= 3 ? 'Standard' : 'Basic', missingEvidence }
 }
 
 export function assignUniqueXI(players: Player[], slots: TacticSlot[], scores: (player: Player, slot: TacticSlot) => number) {
@@ -94,5 +101,4 @@ export function playerDecision({starter,fitGap,performance,sample,alternativeGap
   if (!starter && depthSafe && sample >= 5 && fitGap < -5 && performance < 60) return 'Review sale'
   if (starter && sample >= 3 && performance < 60) return 'Consider bench'
   if (starter && alternativeGap >= 5) return 'Try alternative'
-  if (fitGap < -5) return 'System mismatch'
 }

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { access, copyFile } from 'node:fs/promises'
 import path from 'node:path'
 import { CareerStore } from './store'
 import { Importer } from './importer'
@@ -8,6 +9,15 @@ import type { AnalystState, OCRValue, Tactic } from '../src/shared/types'
 let window: BrowserWindow | null = null
 let store: CareerStore
 let importer: Importer
+
+async function deployLiveEditorScripts() {
+  const target = 'C:\\FC 26 Live Editor\\lua\\autorun'
+  try {
+    await access(target)
+    const source = app.isPackaged ? path.join(process.resourcesPath, 'live_editor') : path.join(app.getAppPath(), 'live_editor')
+    await Promise.all(['career_snapshot.lua','match_telemetry.lua'].map(name=>copyFile(path.join(source,name),path.join(target,name))))
+  } catch { /* Live Editor is optional or installed elsewhere; the app remains read-only. */ }
+}
 
 function createWindow() {
   window = new BrowserWindow({
@@ -23,6 +33,7 @@ function createWindow() {
 function emit() { window?.webContents.send('career:changed', store.state) }
 
 app.whenReady().then(async () => {
+  await deployLiveEditorScripts()
   store = new CareerStore(); await store.load()
   importer = new Importer(store, () => window)
   createWindow(); importer.start(); await importer.importAll()

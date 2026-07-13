@@ -13,20 +13,36 @@ export const seasonId = (date: string) => {
 
 export function migrateState(raw: AnalystState): AnalystState {
   const state = raw
+  state.career ??= { teamName: 'Unlinked career', season: 'Current season', createdAt: new Date().toISOString() }
   const latestCareerDate = [...(state.matches ?? [])].map(match => match.date).filter(Boolean).sort().at(-1)
   state.schemaVersion = 2
   state.matches ??= []
   state.players ??= []
+  state.tactics ??= []
+  state.settings ??= {} as AnalystState['settings']
+  state.sync ??= { status: 'watching', message: 'Waiting for Live Editor exports' }
   for (const match of state.matches) {
     match.seasonId ||= seasonId(match.date)
+    if (match.opponent === 'Opponent not exposed') match.opponent = 'Opponent pending fixture sync'
     match.teamStatistics ??= {}
     match.appearances ??= []
+    match.screenshots ??= []
     match.ocr ??= { status: 'none', values: [] }
     for (const appearance of match.appearances) appearance.telemetry ??= { rating: appearance.rating, goals: appearance.goals, assists: appearance.assists, saves: appearance.saves }
   }
-  for (const player of state.players) for (const snapshot of player.snapshots ??= []) {
-    snapshot.careerDate ||= latestCareerDate || snapshot.capturedAt.slice(0, 10)
-    snapshot.potential ??= player.potential
+  for (const player of state.players) {
+    if ((player.form ?? 0) <= 5) player.form = undefined
+    if ((player.fitness ?? 0) <= 5) player.fitness = undefined
+    if ((player.sharpness ?? 0) <= 5) player.sharpness = undefined
+    if ((player.morale ?? 0) <= 5) player.morale = undefined
+    for (const snapshot of player.snapshots ??= []) {
+      snapshot.careerDate ||= latestCareerDate || snapshot.capturedAt.slice(0, 10)
+      snapshot.potential ??= player.potential
+      if ((snapshot.form ?? 0) <= 5) snapshot.form = undefined
+      if ((snapshot.fitness ?? 0) <= 5) snapshot.fitness = undefined
+      if ((snapshot.sharpness ?? 0) <= 5) snapshot.sharpness = undefined
+      if ((snapshot.morale ?? 0) <= 5) snapshot.morale = undefined
+    }
   }
   return state
 }
@@ -50,7 +66,7 @@ export const teamMetric = (match: Match, field: string) => {
   return match.teamStatistics[field]
 }
 export const playerMetric = (match: Match, appearance: Appearance, field: string) => {
-  const automatic: Record<string, number | undefined> = { rating: appearance.rating, minutes: appearance.minutes, goals: appearance.goals, assists: appearance.assists, saves: appearance.saves, goalsConceded: appearance.goalsConceded }
+  const automatic: Record<string, number | undefined> = { rating: appearance.rating, minutes: appearance.minutes || undefined, goals: appearance.goals, assists: appearance.assists, saves: appearance.saves, goalsConceded: appearance.goalsConceded }
   if (field in automatic) return automatic[field]
   return confirmed(match) ? appearance.detailedMetrics[field] : undefined
 }

@@ -55,7 +55,7 @@ local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
 local profile_id = career_id(team_id)
 
 local attributes = {
-    'overallrating','potential','acceleration','sprintspeed','finishing','shotpower','longshots','positioning',
+    'acceleration','sprintspeed','finishing','shotpower','longshots','positioning',
     'volleys','penalties','vision','crossing','freekickaccuracy','shortpassing','longpassing','curve',
     'agility','balance','reactions','ballcontrol','dribbling','composure','interceptions','headingaccuracy',
     'defensiveawareness','standingtackle','slidingtackle','jumping','stamina','strength','aggression',
@@ -100,11 +100,12 @@ local fixture_rows = {}
 for _, fixture in ipairs(GetDBTableRows('fixtures') or {}) do
     local home_id = number(value(fixture, 'hometeamid'))
     local away_id = number(value(fixture, 'awayteamid'))
-    if home_id == team_id or away_id == team_id then
+    local raw_date = number(value(fixture, 'fixturedate'))
+    if raw_date > 0 and (home_id == team_id or away_id == team_id) then
         local opponent_id = home_id == team_id and away_id or home_id
         local competition_id = number(value(fixture, 'competitionid'))
         local fixture_date = DATE:new()
-        fixture_date:FromGregorianDays(number(value(fixture, 'fixturedate')))
+        fixture_date:FromGregorianDays(raw_date)
         table.insert(fixture_rows, {
             SCHEMA_VERSION, csv(profile_id), number(value(fixture, 'fixtureid')),
             csv(string.format('%04d-%02d-%02d', fixture_date.year, fixture_date.month, fixture_date.day)),

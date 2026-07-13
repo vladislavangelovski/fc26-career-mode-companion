@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assignUniqueXI, playerDecision, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadNeeds } from './scoring'
-import type { Player, TacticSlot } from './types'
+import type { Appearance, Player, TacticSlot } from './types'
 
 const player = (id: string, injured = false): Player => ({ id, name:id, positions:['CM'], overall:75, attributes:{vision:80,shortpassing:82,longpassing:78,ballcontrol:80,composure:76,reactions:78}, familiarity:{playmaker:50}, injured, suspended:false, fitness:80,sharpness:70,morale:75,form:80,snapshots:[] })
 
@@ -9,15 +9,20 @@ describe('recommendation scoring', () => {
     expect(scorePlayer(player('injured',true),ROLE_LIBRARY.at(-1)!,[]).excluded).toBe('Injured')
     const healthy=scorePlayer(player('healthy'),ROLE_LIBRARY.at(-1)!,[])
     expect(healthy.total).toBeGreaterThan(0)
-    expect(healthy.missingEvidence).toContain('detailed match metrics')
+    expect(healthy.missingEvidence).toContain('recent match ratings')
     expect(healthy.confidence).toBe('Basic')
   })
   it('does not turn missing telemetry into a low score', () => {
     const sparse=player('sparse'); sparse.fitness=undefined; sparse.sharpness=undefined; sparse.morale=undefined; sparse.form=3; sparse.familiarity={}
     const score=scorePlayer(sparse,ROLE_LIBRARY.at(-1)!,[])
     expect(Math.abs(score.total-score.attributes)).toBeLessThan(.51)
-    expect(score.missingEvidence).toContain('form')
-    expect(score.missingEvidence).toContain('role familiarity')
+    expect(score.missingEvidence).toEqual(['recent match ratings'])
+  })
+  it('uses only the last five ratings for recent performance', () => {
+    const appearances=[8,7,6,5,4,3].map((rating,index)=>({id:String(index),matchId:String(index),playerId:'rated',minutes:90,rating,goals:20,assists:20,yellowCards:0,redCards:0,saves:0,goalsConceded:0,detailedMetrics:{passAccuracy:100}})) as Appearance[]
+    const score=scorePlayer(player('rated'),ROLE_LIBRARY.find(role=>role.id==='playmaker')!,appearances)
+    expect(score.performance).toBe(50)
+    expect(score.sampleSize).toBe(5)
   })
   it('finds the maximum unique assignment rather than a greedy lineup', () => {
     const slots=[{id:'one'},{id:'two'}] as TacticSlot[]
