@@ -37,6 +37,6 @@
     "asarUnpack": ["node_modules/sharp/**/*", "node_modules/@img/**/*", "node_modules/tesseract.js/**/*", "node_modules/tesseract.js-core/**/*", "node_modules/@tesseract.js-data/**/*"],
     "directories": { "output": "release" },
     "win": { "target": "nsis", "signAndEditExecutable": false },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "include": "build/installer.nsh" }
   }
 }
