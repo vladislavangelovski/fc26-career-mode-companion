@@ -1,5 +1,7 @@
+local MEMORY = require 'imports/core/memory'
 require 'imports/career_mode/enums'
 require 'imports/other/helpers'
+require 'imports/services/enums'
 
 -- Auto-runs after a Career save loads and immediately before matches.
 -- This script only reads FC 26 data and overwrites the two snapshot files.
@@ -45,9 +47,39 @@ local function career_id(team_id)
     return string.format('manager-%d-start-%d', user_id, start_date)
 end
 
-local function next_fixture(team_id, today)
+local function fixtures()
+    local manager = MEMORY:ReadMultilevelPointer(GetPlugin(ENUM_djb2IFCEInterface_CLSS), {0x18, 0x10, 0x08, 0x00})
+    assert(manager and manager > 0, 'FC 26 fixture manager is unavailable')
+    local fixture_list = MEMORY:ReadPointer(manager + 0x60)
+    local standings_list = MEMORY:ReadPointer(manager + 0x88)
+    assert(fixture_list > 0 and standings_list > 0, 'FC 26 fixture lists are unavailable')
+    local fixture_count = MEMORY:ReadInt(fixture_list + 0x1C)
+    local standings_count = MEMORY:ReadInt(standings_list + 0x1C)
+    assert(fixture_count >= 0 and fixture_count < 10000 and standings_count >= 0 and standings_count < 10000, 'FC 26 fixture list is invalid')
+    local fixture_begin = MEMORY:ReadPointer(fixture_list + 0x28)
+    local standings_begin = MEMORY:ReadPointer(standings_list + 0x28)
+    local result = {}
+    for i = 0, fixture_count - 1 do
+        local current = fixture_begin + (0x18 * i)
+        if MEMORY:ReadBool(current + 0x14) then
+            local home_index = MEMORY:ReadShort(current + 0x0A)
+            local away_index = MEMORY:ReadShort(current + 0x0C)
+            if home_index >= 0 and home_index < standings_count and away_index >= 0 and away_index < standings_count then
+                table.insert(result, {
+                    fixturedate = MEMORY:ReadInt(current), fixtureid = MEMORY:ReadShort(current + 0x06),
+                    competitionid = MEMORY:ReadShort(current + 0x08),
+                    hometeamid = MEMORY:ReadInt(standings_begin + (0x18 * home_index) + 0x04),
+                    awayteamid = MEMORY:ReadInt(standings_begin + (0x18 * away_index) + 0x04)
+                })
+            end
+        end
+    end
+    return result
+end
+
+local function next_fixture(rows, team_id, today)
     local best
-    for _, fixture in ipairs(GetDBTableRows('fixtures') or {}) do
+    for _, fixture in ipairs(rows) do
         local home_id = number(value(fixture, 'hometeamid'))
         local away_id = number(value(fixture, 'awayteamid'))
         local fixture_date = number(value(fixture, 'fixturedate'))
@@ -66,6 +98,7 @@ local players = index('players', 'playerid')
 local date = GetCurrentDate()
 local captured_at = os.date('!%Y-%m-%dT%H:%M:%SZ')
 local profile_id = career_id(team_id)
+local fixture_data = fixtures()
 
 local attributes = {
     'acceleration','sprintspeed','finishing','shotpower','longshots','positioning',
@@ -110,7 +143,7 @@ write_csv(SQUAD_FILE, squad_headers, squad_rows)
 
 local fixture_headers = {'schema_version','career_id','fixture_id','career_date','team_id','opponent_id','opponent','home_away','competition_id','competition'}
 local fixture_rows = {}
-for _, fixture in ipairs(GetDBTableRows('fixtures') or {}) do
+for _, fixture in ipairs(fixture_data) do
     local home_id = number(value(fixture, 'hometeamid'))
     local away_id = number(value(fixture, 'awayteamid'))
     local raw_date = number(value(fixture, 'fixturedate'))
@@ -137,7 +170,7 @@ local opponent_headers = {
     'stat_competition','appearances','average_rating','goals','assists','yellow_cards','red_cards','clean_sheets','saves','goals_conceded'
 }
 local opponent_rows = {}
-local upcoming = next_fixture(team_id, date:ToInt())
+local upcoming = next_fixture(fixture_data, team_id, date:ToInt())
 if upcoming then
     local home_id = number(value(upcoming, 'hometeamid'))
     local away_id = number(value(upcoming, 'awayteamid'))

@@ -1,6 +1,6 @@
 {
   "name": "fc26-career-analyst",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Local FC 26 Career Mode analysis companion",
   "main": "dist-electron/electron/main.js",

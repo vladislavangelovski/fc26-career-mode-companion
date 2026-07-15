@@ -1,5 +1,7 @@
+local MEMORY = require 'imports/core/memory'
 require 'imports/career_mode/enums'
 require 'imports/other/helpers'
+require 'imports/services/enums'
 
 -- Auto-runs with Live Editor; one row per player appearance is appended after every user match.
 local OUTPUT_FILE = string.format('%s\\FC26 Career Analyst\\Live Editor\\fc26_match_telemetry.csv', os.getenv('APPDATA'))
@@ -88,11 +90,41 @@ local function take_snapshot()
     return result
 end
 
+local function fixtures()
+    local manager = MEMORY:ReadMultilevelPointer(GetPlugin(ENUM_djb2IFCEInterface_CLSS), {0x18, 0x10, 0x08, 0x00})
+    assert(manager and manager > 0, 'FC 26 fixture manager is unavailable')
+    local fixture_list = MEMORY:ReadPointer(manager + 0x60)
+    local standings_list = MEMORY:ReadPointer(manager + 0x88)
+    assert(fixture_list > 0 and standings_list > 0, 'FC 26 fixture lists are unavailable')
+    local fixture_count = MEMORY:ReadInt(fixture_list + 0x1C)
+    local standings_count = MEMORY:ReadInt(standings_list + 0x1C)
+    assert(fixture_count >= 0 and fixture_count < 10000 and standings_count >= 0 and standings_count < 10000, 'FC 26 fixture list is invalid')
+    local fixture_begin = MEMORY:ReadPointer(fixture_list + 0x28)
+    local standings_begin = MEMORY:ReadPointer(standings_list + 0x28)
+    local result = {}
+    for i = 0, fixture_count - 1 do
+        local current = fixture_begin + (0x18 * i)
+        if MEMORY:ReadBool(current + 0x14) then
+            local home_index = MEMORY:ReadShort(current + 0x0A)
+            local away_index = MEMORY:ReadShort(current + 0x0C)
+            if home_index >= 0 and home_index < standings_count and away_index >= 0 and away_index < standings_count then
+                table.insert(result, {
+                    fixturedate = MEMORY:ReadInt(current), fixtureid = MEMORY:ReadShort(current + 0x06),
+                    competitionid = MEMORY:ReadShort(current + 0x08),
+                    hometeamid = MEMORY:ReadInt(standings_begin + (0x18 * home_index) + 0x04),
+                    awayteamid = MEMORY:ReadInt(standings_begin + (0x18 * away_index) + 0x04)
+                })
+            end
+        end
+    end
+    return result
+end
+
 local function find_fixture()
     local team_id = get_managed_team_id()
     local date = GetCurrentDate():ToInt()
     local best
-    for _, row in ipairs(GetDBTableRows('fixtures') or {}) do
+    for _, row in ipairs(fixtures()) do
         local home_id = number(value(row, 'hometeamid'))
         local away_id = number(value(row, 'awayteamid'))
         if number(value(row, 'fixturedate')) == date and (home_id == team_id or away_id == team_id) then
