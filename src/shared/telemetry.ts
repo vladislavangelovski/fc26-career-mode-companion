@@ -5,14 +5,25 @@ import { seasonId } from './trends'
 const POSITION_NAMES: Record<string, string> = { '0':'GK','1':'GK','2':'RB','3':'RB','4':'CB','5':'CB','6':'CB','7':'LB','8':'LB','9':'CDM','10':'CDM','11':'CDM','12':'RM','13':'CM','14':'CM','15':'CM','16':'LM','17':'CAM','18':'CAM','19':'CAM','20':'RW','21':'ST','22':'LW','23':'RW','24':'ST','25':'ST','26':'ST','27':'LW' }
 export const positionName = (value?: string) => POSITION_NAMES[value ?? ''] ?? (/^-?\d+$/.test(value ?? '') ? '' : value ?? '')
 
-const TACTIC_ROLE_FOCUS: Record<string, [string, string]> = {
-  '4162':['Goalkeeper','Balanced'], '8386':['Fullback','Balanced'],
-  '12737':['Defender','Defend'], '12865':['Ball-Playing Defender','Defend'],
-  '17095':['Holding','Ball-Winning'], '25605':['Winger','Attack'],
-  '25731':['Wide Midfielder','Build-Up'], '30346':['Classic 10','Versatile'],
-  '38213':['Target Forward','Attack'], '38275':['False 9','Build-Up'],
+const TACTIC_ROLES: Record<number, Record<number, string>> = {
+  1:{1:'Goalkeeper',2:'Sweeper Keeper',27:'Ball-Playing Keeper'},
+  2:{3:'Fullback',4:'Wingback',5:'Falseback',6:'Attacking Wingback',28:'Inverted Wingback'},
+  3:{7:'Defender',8:'Stopper',9:'Ball-Playing Defender',29:'Wide Back'},
+  4:{10:'Centre Half',11:'Holding',12:'Deep-Lying Playmaker',13:'Wide Half',30:'Box Crasher'},
+  5:{11:'Holding',12:'Deep-Lying Playmaker',14:'Box-to-Box',15:'Half-Winger',20:'Playmaker'},
+  6:{16:'Winger',17:'Wide Playmaker',18:'Wide Midfielder',19:'Inside Forward'},
+  7:{15:'Half-Winger',20:'Playmaker',25:'Shadow Striker',26:'Classic 10'},
+  8:{16:'Winger',17:'Wide Playmaker',19:'Inside Forward'},
+  9:{21:'Target Forward',22:'False 9',23:'Poacher',24:'Advanced Forward'},
 }
-export const tacticRoleFocus = (value?: string) => TACTIC_ROLE_FOCUS[value ?? '']
+const TACTIC_FOCUSES: Record<number, string> = {1:'Defend',2:'Balanced',3:'Build-Up',4:'Support',5:'Attack',6:'Roaming',7:'Ball-Winning',8:'Aggressive',9:'Wide',10:'Versatile'}
+export function tacticRoleFocus(value?: string): [string, string] | undefined {
+  const code=Number(value)
+  if (!Number.isInteger(code) || code < 0) return
+  const role=TACTIC_ROLES[code >> 12]?.[(code >> 6) & 63]
+  const focus=TACTIC_FOCUSES[code & 63]
+  return role && focus ? [role,focus] : undefined
+}
 const ROLE_FOCUSES:Record<string,string[]> = {
   'GK:Goalkeeper':['Defend','Balanced'],'GK:Sweeper Keeper':['Balanced','Build-Up'],'GK:Ball-Playing Keeper':['Build-Up'],
   'FB:Fullback':['Defend','Balanced','Versatile'],'FB:Falseback':['Defend','Balanced'],'FB:Wingback':['Balanced','Support'],'FB:Attacking Wingback':['Support','Attack'],'FB:Inverted Wingback':['Build-Up','Attack'],

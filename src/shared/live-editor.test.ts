@@ -17,6 +17,7 @@ describe('Live Editor autorun safety', () => {
     expect(snapshot).toContain('fc26_opponent_snapshot.csv')
     expect(snapshot).not.toContain("OPPONENT_FILE = EXPORT_DIR .. '\\\\Desktop")
     expect(snapshot).toContain('raw_date > 0')
+    expect(snapshot).not.toContain('ENUM_CM_EVENT_MSG_DAY_PASSED')
     expect(readFileSync('electron/main.ts','utf8')).toContain('deployLiveEditorScripts')
     expect(JSON.parse(readFileSync('package.json','utf8')).build.extraResources).toEqual([{from:'live_editor',to:'live_editor'}])
   })

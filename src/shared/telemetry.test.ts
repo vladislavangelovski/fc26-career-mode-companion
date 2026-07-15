@@ -10,14 +10,27 @@ describe('telemetry merge', () => {
   it('decodes FC 26 positions, roles, and focuses without generic fallbacks', () => {
     expect(['4','5','6'].map(positionName)).toEqual(['CB','CB','CB'])
     expect(['28','29','-1'].map(positionName)).toEqual(['','',''])
-    expect(tacticRoleFocus('12737')).toEqual(['Defender','Defend'])
-    expect(tacticRoleFocus('12865')).toEqual(['Ball-Playing Defender','Defend'])
-    expect(tacticRoleFocus('17095')).toEqual(['Holding','Ball-Winning'])
-    expect(tacticRoleFocus('38275')).toEqual(['False 9','Build-Up'])
-    expect(roleFocuses('GK','Goalkeeper')).toEqual(['Defend','Balanced'])
-    expect(roleFocuses('GK','Ball-Playing Keeper')).toEqual(['Build-Up'])
-    expect(roleFocuses('CM','Half-Winger')).toContain('Support')
-    expect(roleFocuses('CAM','Half-Winger')).toContain('Roaming')
+    const roles: [string,number,number,string][] = [
+      ['GK',1,1,'Goalkeeper'],['GK',1,2,'Sweeper Keeper'],['GK',1,27,'Ball-Playing Keeper'],
+      ['RB',2,3,'Fullback'],['RB',2,5,'Falseback'],['RB',2,4,'Wingback'],['RB',2,6,'Attacking Wingback'],['RB',2,28,'Inverted Wingback'],
+      ['CB',3,7,'Defender'],['CB',3,8,'Stopper'],['CB',3,9,'Ball-Playing Defender'],['CB',3,29,'Wide Back'],
+      ['CDM',4,11,'Holding'],['CDM',4,10,'Centre Half'],['CDM',4,12,'Deep-Lying Playmaker'],['CDM',4,13,'Wide Half'],['CDM',4,30,'Box Crasher'],
+      ['CM',5,14,'Box-to-Box'],['CM',5,11,'Holding'],['CM',5,12,'Deep-Lying Playmaker'],['CM',5,20,'Playmaker'],['CM',5,15,'Half-Winger'],
+      ['RM',6,16,'Winger'],['RM',6,18,'Wide Midfielder'],['RM',6,17,'Wide Playmaker'],['RM',6,19,'Inside Forward'],
+      ['CAM',7,20,'Playmaker'],['CAM',7,25,'Shadow Striker'],['CAM',7,15,'Half-Winger'],['CAM',7,26,'Classic 10'],
+      ['RW',8,16,'Winger'],['RW',8,19,'Inside Forward'],['RW',8,17,'Wide Playmaker'],
+      ['ST',9,24,'Advanced Forward'],['ST',9,23,'Poacher'],['ST',9,22,'False 9'],['ST',9,21,'Target Forward'],
+    ]
+    const focusCodes: Record<string,number> = {'Defend':1,'Balanced':2,'Build-Up':3,'Support':4,'Attack':5,'Roaming':6,'Ball-Winning':7,'Aggressive':8,'Wide':9,'Versatile':10}
+    let combinations=0
+    for (const [position,group,roleId,role] of roles) for (const focus of roleFocuses(position,role)) {
+      const code=(group << 12) | (roleId << 6) | focusCodes[focus]
+      expect(tacticRoleFocus(String(code)), `${position} ${role} / ${focus}`).toEqual([role,focus])
+      combinations++
+    }
+    expect(roles).toHaveLength(37)
+    expect(combinations).toBe(85)
+    expect(tacticRoleFocus('99999')).toBeUndefined()
   })
 
   it('keeps rows from different careers isolated', () => {

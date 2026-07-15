@@ -1,7 +1,7 @@
 require 'imports/career_mode/enums'
 require 'imports/other/helpers'
 
--- Auto-runs after a Career save loads and refreshes on day changes and before matches.
+-- Auto-runs after a Career save loads and immediately before matches.
 -- This script only reads FC 26 data and overwrites the two snapshot files.
 local SCHEMA_VERSION = 3
 local EXPORT_DIR = string.format('%s\\FC26 Career Analyst\\Live Editor', os.getenv('APPDATA'))
@@ -229,7 +229,6 @@ end
 local function refresh_snapshot(_, event_id)
     if IsInCM() and (
         event_id == ENUM_CM_EVENT_MSG_POST_LOAD_PREPARE or
-        event_id == ENUM_CM_EVENT_MSG_DAY_PASSED or
         event_id == ENUM_CM_EVENT_MSG_ABOUT_TO_ENTER_PREMATCH
     ) then
         export_snapshot()
