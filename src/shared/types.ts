@@ -52,30 +52,6 @@ export interface Appearance {
   redCards: number
   saves: number
   goalsConceded: number
-  detailedMetrics: Record<string, number>
-  telemetry?: { rating?: number; goals: number; assists: number; saves: number }
-}
-
-export interface OCRValue {
-  id: string
-  screenshotId: string
-  playerId?: string
-  scope: 'team' | 'opponent' | 'player'
-  unmatchedPlayer?: boolean
-  field: string
-  value: string | number
-  confidence: number
-  included: boolean
-}
-
-export interface MatchScreenshot {
-  id: string
-  fileName: string
-  path: string
-  sha256: string
-  screenType: 'team-summary' | 'player-detail' | 'unknown'
-  width: number
-  height: number
 }
 
 export interface Match {
@@ -90,12 +66,7 @@ export interface Match {
   formation?: string
   teamScore?: number
   opponentScore?: number
-  captureLevel: 'telemetry' | 'played'
   appearances: Appearance[]
-  teamStatistics: Record<string, number>
-  opponentStatistics: Record<string, number>
-  screenshots: MatchScreenshot[]
-  ocr: { status: 'none' | 'processing' | 'review' | 'confirmed'; values: OCRValue[] }
 }
 
 export interface OpponentPlayerStatistics {
@@ -192,14 +163,10 @@ export interface AnalystState {
   sync: { status: 'watching' | 'importing' | 'error'; lastImport?: string; message?: string; sources?: Partial<Record<SourceName, SourceStatus>> }
 }
 
-export interface ScreenshotImportResult { imported: number; duplicates: number; rejected: string[] }
-
 export interface DesktopAPI {
   getState(): Promise<AnalystState>
   updateSettings(settings: AnalystState['settings']): Promise<AnalystState>
   importNow(): Promise<AnalystState>
-  importScreenshots(matchId: string): Promise<ScreenshotImportResult>
-  confirmOCR(matchId: string, values: OCRValue[]): Promise<AnalystState>
   updateTactic(tactic: Tactic): Promise<AnalystState>
   backup(): Promise<string | null>
   restore(): Promise<AnalystState | null>

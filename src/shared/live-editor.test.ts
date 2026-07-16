@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Live Editor autorun safety', () => {
@@ -24,5 +24,29 @@ describe('Live Editor autorun safety', () => {
     expect(snapshot).not.toContain('ENUM_CM_EVENT_MSG_DAY_PASSED')
     expect(readFileSync('electron/main.ts','utf8')).toContain('deployLiveEditorScripts')
     expect(JSON.parse(readFileSync('package.json','utf8')).build.extraResources).toEqual([{from:'live_editor',to:'live_editor'}])
+  })
+})
+
+describe('mid-match resource throttling', () => {
+  it('yields Electron resources while the analyst is unfocused', () => {
+    const main=readFileSync('electron/main.ts','utf8')
+    const importer=readFileSync('electron/importer.ts','utf8')
+    expect(main).toContain('app.disableHardwareAcceleration()')
+    expect(main).toContain('backgroundThrottling: true')
+    expect(main).toContain('PRIORITY_BELOW_NORMAL')
+    expect(main).toContain("window.on('blur', () => lowerAppPriority(true))")
+    expect(main).toContain("window.on('focus', () => { lowerAppPriority(false); emit() })")
+    expect(main).toContain("if (window?.isFocused()) window.webContents.send('career:changed', store.state)")
+    expect(importer).toContain("if(window?.isFocused())window.webContents.send('career:changed', this.store.state)")
+  })
+})
+
+describe('telemetry-only build', () => {
+  it('does not ship OCR code or dependencies', () => {
+    const packageJson=JSON.parse(readFileSync('package.json','utf8'))
+    expect(existsSync('electron/ocr.ts')).toBe(false)
+    expect(existsSync('src/shared/ocr.ts')).toBe(false)
+    expect(packageJson.dependencies).toEqual({react:'^19.1.0','react-dom':'^19.1.0'})
+    expect(packageJson.build.asarUnpack).toBeUndefined()
   })
 })

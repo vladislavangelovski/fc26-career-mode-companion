@@ -129,5 +129,5 @@ export class Importer {
     this.store.state.opponent={capturedAt:first.captured_at||new Date().toISOString(),fixtureId:first.fixture_id||undefined,teamId:first.opponent_id,teamName:first.opponent,date:first.fixture_date||undefined,competitionId:first.competition_id||undefined,competition:first.competition||undefined,formation:first.formation_name||undefined,players:[...players.values()]}
   }
 
-  emit() { this.window()?.webContents.send('career:changed', this.store.state) }
+  emit() { const window=this.window();if(window?.isFocused())window.webContents.send('career:changed', this.store.state) }
 }

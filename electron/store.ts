@@ -6,7 +6,7 @@ import os from 'node:os'
 import type { AnalystState } from '../src/shared/types'
 import { migrateState } from '../src/shared/trends'
 
-const VERSION = 3
+const VERSION = 4
 const desktop = path.join(os.homedir(), 'Desktop')
 const directory = path.join(app.getPath('appData'), 'FC26 Career Analyst')
 const liveEditorDirectory = path.join(directory, 'Live Editor')
@@ -39,7 +39,6 @@ export class CareerStore {
   private get profileDirectory() { return path.join(this.profilesDirectory, createHash('sha256').update(this.profileId).digest('hex').slice(0, 16)) }
   private get file() { return path.join(this.profileDirectory, 'career.json') }
   private get backupFile() { return path.join(this.profileDirectory, 'career.backup.json') }
-  get screenshotDirectory() { return path.join(this.profileDirectory, 'screenshots') }
 
   private async readProfile() {
     try { return migrateState(JSON.parse(await readFile(this.file, 'utf8')) as AnalystState) }
@@ -111,7 +110,7 @@ export class CareerStore {
   async exportTo(destination: string) { await this.save(); await copyFile(this.file, destination) }
   async restoreFrom(source: string) {
     const restored = JSON.parse(await readFile(source, 'utf8')) as AnalystState
-    if (![1, 2, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
+    if (![1, 2, 3, VERSION].includes(restored.schemaVersion) || !Array.isArray(restored.players) || !Array.isArray(restored.matches)) throw new Error('Unsupported or invalid career backup')
     await this.save()
     restored.settings = { ...this.state.settings, ...restored.settings }
     this.state = migrateState(restored)

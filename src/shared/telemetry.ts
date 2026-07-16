@@ -77,7 +77,7 @@ export function mergeTelemetry(state: AnalystState, rows: Record<string, string>
     let match = state.matches.find(item => item.id === id)
     const first = matchRows[0]
     if (!match) {
-      match = { id, seasonId: seasonId(first.career_date), fixtureId: first.fixture_id || undefined, date: first.career_date, competition: first.competition, opponent: first.opponent || 'Opponent pending fixture sync', venue: first.home_away === 'home' ? 'home' : first.home_away === 'away' ? 'away' : undefined, tacticId:first.formation_id||undefined,formation:first.formation_name||undefined,teamScore: first.team_score === undefined || first.team_score === '' ? undefined : n(first.team_score), opponentScore: first.opponent_score === undefined || first.opponent_score === '' ? undefined : n(first.opponent_score), captureLevel: 'telemetry', appearances: [], teamStatistics: {}, opponentStatistics:{}, screenshots: [], ocr: { status: 'none', values: [] } }
+      match = { id, seasonId: seasonId(first.career_date), fixtureId: first.fixture_id || undefined, date: first.career_date, competition: first.competition, opponent: first.opponent || 'Opponent pending fixture sync', venue: first.home_away === 'home' ? 'home' : first.home_away === 'away' ? 'away' : undefined, tacticId:first.formation_id||undefined,formation:first.formation_name||undefined,teamScore: first.team_score === undefined || first.team_score === '' ? undefined : n(first.team_score), opponentScore: first.opponent_score === undefined || first.opponent_score === '' ? undefined : n(first.opponent_score), appearances: [] }
       state.matches.push(match)
     }
     match.fixtureId = first.fixture_id || match.fixtureId
@@ -92,11 +92,10 @@ export function mergeTelemetry(state: AnalystState, rows: Record<string, string>
     for (const row of matchRows) {
       const playerId = row.player_id
       if (!state.players.some(p => p.id === playerId)) state.players.push({ id: playerId, name: row.player || `Player ${playerId}`, positions: [positionName(row.played_position)].filter(Boolean), overall: n(row.current_ovr), attributes: {}, familiarity: {}, injured: false, suspended: false, snapshots: [] })
-      const telemetry = { rating: n(row.rating) || undefined, goals: n(row.goals), assists: n(row.assists), saves: n(row.saves) }
       const planned=tacticRoleFocus(row.planned_role_code)
-      const appearance: Appearance = { id: `${id}:${playerId}`, matchId: id, playerId, minutes: n(row.minutes), position: positionName(row.played_position), plannedRole:planned?.[0],plannedFocus:planned?.[1],lineupStatus: row.lineup_status, lineupStatusSource: row.lineup_status_source, overall: n(row.current_ovr) || undefined, ...telemetry, yellowCards: n(row.yellow_cards), redCards: n(row.red_cards) + n(row.second_yellows), goalsConceded: n(row.goals_conceded), detailedMetrics: {}, telemetry }
+      const appearance: Appearance = { id: `${id}:${playerId}`, matchId: id, playerId, minutes: n(row.minutes), position: positionName(row.played_position), plannedRole:planned?.[0],plannedFocus:planned?.[1],lineupStatus: row.lineup_status, lineupStatusSource: row.lineup_status_source, overall: n(row.current_ovr) || undefined, rating: n(row.rating) || undefined, goals: n(row.goals), assists: n(row.assists), saves: n(row.saves), yellowCards: n(row.yellow_cards), redCards: n(row.red_cards) + n(row.second_yellows), goalsConceded: n(row.goals_conceded) }
       const existing = match.appearances.findIndex(a => a.id === appearance.id)
-      if (existing >= 0) { const previous = match.appearances[existing]; match.appearances[existing] = { ...previous, ...appearance, ...(match.ocr.status === 'confirmed' ? { rating: previous.rating, goals: previous.goals, assists: previous.assists, saves: previous.saves } : {}), detailedMetrics: previous.detailedMetrics } }
+      if (existing >= 0) match.appearances[existing] = { ...match.appearances[existing], ...appearance }
       else match.appearances.push(appearance)
     }
     if (first.team_score === undefined || first.team_score === '') match.teamScore = match.appearances.reduce((total, appearance) => total + appearance.goals, 0)

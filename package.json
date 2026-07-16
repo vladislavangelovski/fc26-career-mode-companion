@@ -1,6 +1,6 @@
 {
   "name": "fc26-career-analyst",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Local FC 26 Career Mode analysis companion",
   "main": "dist-electron/electron/main.js",
@@ -12,11 +12,8 @@
     "package": "npm run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
-    "@tesseract.js-data/eng": "^1.0.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "sharp": "^0.34.3",
-    "tesseract.js": "^6.0.1"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
@@ -32,11 +29,28 @@
   "build": {
     "appId": "local.fc26.career-analyst",
     "productName": "FC 26 Career Analyst",
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
-    "extraResources": [{ "from": "live_editor", "to": "live_editor" }],
-    "asarUnpack": ["node_modules/sharp/**/*", "node_modules/@img/**/*", "node_modules/tesseract.js/**/*", "node_modules/tesseract.js-core/**/*", "node_modules/@tesseract.js-data/**/*"],
-    "directories": { "output": "release" },
-    "win": { "target": "nsis", "signAndEditExecutable": false },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "include": "build/installer.nsh" }
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "live_editor",
+        "to": "live_editor"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"
+    }
   }
 }

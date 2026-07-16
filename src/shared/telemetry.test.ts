@@ -48,15 +48,14 @@ describe('telemetry merge', () => {
     expect(state.matches[0]).toMatchObject({tacticId:'12',formation:'4-1-2-1-2'})
     expect(state.matches[0].appearances[0]).toMatchObject({plannedRole:'Classic 10',plannedFocus:'Versatile'})
     expect(state.matches[0].appearances).toHaveLength(1)
-    state.matches[0].appearances[0].detailedMetrics.passAccuracy = 92
     mergeTelemetry(state, [{...first,player_id:'9',player:'O\'Brien',minutes:'24'}])
     expect(state.matches[0].appearances).toHaveLength(2)
     mergeTelemetry(state, [first])
-    expect(state.matches[0].appearances[0].detailedMetrics.passAccuracy).toBe(92)
+    expect(state.matches[0].appearances[0].rating).toBe(7.7)
   })
 
   it('repairs a legacy opponent from the fixture snapshot', () => {
-    const state=initialTestState();state.matches=[{id:'legacy',seasonId:'2025/26',date:'2025-07-29',competition:'Cup',opponent:'Opponent not exposed',captureLevel:'telemetry',appearances:[],teamStatistics:{},opponentStatistics:{},screenshots:[],ocr:{status:'none',values:[]}}]
+    const state=initialTestState();state.matches=[{id:'legacy',seasonId:'2025/26',date:'2025-07-29',competition:'Cup',opponent:'Opponent not exposed',appearances:[]}]
     mergeFixtures(state,[{fixture_id:'40',career_date:'2025-07-29',competition:'Cup',opponent:'Málaga',home_away:'away'}])
     expect(state.matches[0]).toMatchObject({fixtureId:'40',opponent:'Málaga',venue:'away'})
   })

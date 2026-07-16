@@ -1,6 +1,6 @@
 # FC 26 Career Analyst
 
-A private, offline Windows companion for FC 26 Manager Career. It watches read-only Live Editor CSV exports, preserves each career separately, enriches played matches through reviewed screenshot OCR, and connects match review, squad planning, tactics and next-opponent preparation.
+A private, offline Windows companion for FC 26 Manager Career. It watches read-only Live Editor CSV exports, preserves each career separately, and connects automatic match telemetry, squad planning, tactics and next-opponent preparation.
 
 ## Run the app
 
@@ -9,11 +9,11 @@ npm install
 npm start
 ```
 
-Live Editor exports, career data, and screenshots are stored under `%APPDATA%\FC26 Career Analyst`; CSV exports live in its `Live Editor` subfolder.
+Live Editor exports and career data are stored under `%APPDATA%\FC26 Career Analyst`; CSV exports live in its `Live Editor` subfolder.
 
 ## Multiple careers
 
-Each loaded Manager Career is identified automatically from its Live Editor manager record and career start date. The app switches to that career when its snapshot arrives; players, matches, tactics, screenshots, OCR confirmations, and trends are stored in an isolated folder under `%APPDATA%\FC26 Career Analyst\careers`. Loading another save cannot merge its history into the active career.
+Each loaded Manager Career is identified automatically from its Live Editor manager record and career start date. The app switches to that career when its snapshot arrives; players, matches, tactics and trends are stored in an isolated folder under `%APPDATA%\FC26 Career Analyst\careers`. Loading another save cannot merge its history into the active career.
 
 Existing single-career data is migrated into the new profile layout without being deleted. Backups and restores operate on the active career only. A team change inside the same save remains part of that career because the identity is based on the career, not the club.
 
@@ -25,21 +25,17 @@ The snapshot script exports the managed squad, fixtures, active tactic and the n
 
 If Live Editor is installed elsewhere, copy those two files from this repository's `live_editor` folder into that installation's `lua\autorun` folder once.
 
-Starter/substitute status is labelled as inferred because FC exposes played minutes but not the substitution event. Unknown minutes remain blank rather than being assumed to be 90. Morale, fitness, sharpness, and other fields remain blank when this Live Editor build does not expose a reliable value.
+Starter/substitute status is labelled as inferred because FC exposes played minutes but not the substitution event. Unknown minutes remain blank rather than being assumed to be 90. Morale, fitness, sharpness and other fields remain blank when this Live Editor build does not expose a reliable value.
 
 ## Manager workflow
 
-The navigation is organised around **Overview**, **Performance**, **Squad**, **Tactics**, and **Opponent**. Matches and trends share the Performance workspace; evidence briefings and depth planning live with the Squad instead of on a disconnected recommendations page.
+The navigation is organised around **Overview**, **Performance**, **Squad**, **Tactics**, and **Opponent**. Matches and automatic telemetry trends share the Performance workspace; depth planning lives with the Squad.
 
 Role estimates combine imported FC attributes for the exact role with the last five current-season ratings (70/30 when both exist). They are supporting analyst estimates, not FC hidden ratings. Selection advice requires at least five rated appearances and 300 minutes. Sale or replacement review requires ten rated appearances and 600 minutes plus safe natural-position depth. Missing data is excluded rather than scored as zero.
 
 Primary and secondary positions are hard eligibility rules. Depth is measured by positional unit: unique starters, a distinct rotation player, a third goalkeeper and separately labelled emergency cover. One versatile reserve cannot silently satisfy several rotation requirements.
 
-## Played-match screenshots
-
-Open a match in **Performance**, choose **Add screenshot batch**, and select English 2560×1440 captures. Images are checked, SHA-256 deduplicated, preprocessed, and OCRed locally. Team-summary rows are reviewed for both clubs, enabling xG, xGA, xGD, shooting, possession, passing and defensive comparisons. Correct the review table and confirm it before any extracted value enters analysis. Screenshots are optional; automatic telemetry remains useful without them.
-
-The app does not invent event-location analytics. Shot maps, pass networks, xT, VAEP, PPDA, pressure maps and off-ball tracking remain unavailable unless FC or Live Editor exposes reliable action coordinates in the future.
+The app only displays data exported reliably by FC or Live Editor. xG, shot maps, pass networks, xT, VAEP, PPDA, pressure maps and off-ball tracking remain unavailable.
 
 ## Verification and installer
 
@@ -49,4 +45,4 @@ npm run build
 npm run package
 ```
 
-The NSIS Windows x64 installer is written to `release` by electron-builder. OCR uses the packaged English language data and needs no network connection.
+The NSIS Windows x64 installer is written to `release` by electron-builder.

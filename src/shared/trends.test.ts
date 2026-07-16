@@ -1,24 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import type { AnalystState, Match } from './types'
-import { filteredMatches, matchBriefing, matchSeries, migrateState, seasonId, teamMetric } from './trends'
+import { filteredMatches, matchSeries, migrateState, seasonId, teamMetric } from './trends'
 import { initialTestState } from './test-utils'
 
-const fixture = (id: string, date: string, competition = 'League'): Match => ({ id, seasonId: seasonId(date), date, competition, opponent: id, teamScore: 1, opponentScore: 0, captureLevel: 'telemetry', appearances: [], teamStatistics: {}, opponentStatistics:{}, screenshots: [], ocr: { status: 'none', values: [] } })
+const fixture = (id: string, date: string, competition = 'League'): Match => ({ id, seasonId: seasonId(date), date, competition, opponent: id, teamScore: 1, opponentScore: 0, appearances: [] })
 
 describe('trend history', () => {
-  it('migrates legacy history to v3 without deleting it', () => {
+  it('migrates legacy history to v4 and removes OCR data', () => {
     const raw = initialTestState() as AnalystState
-    raw.schemaVersion = 1
-    raw.matches = [{ ...fixture('old','2025-08-10'), seasonId: undefined } as unknown as Match]
-    delete (raw.matches[0] as Partial<Match>).screenshots
+    raw.schemaVersion = 3
+    raw.matches = [{ ...fixture('old','2025-08-10'), seasonId: undefined, captureLevel:'played',teamStatistics:{expectedGoals:1.2},opponentStatistics:{},screenshots:[{id:'s1'}],ocr:{status:'confirmed',values:[]} } as unknown as Match]
     delete (raw as Partial<AnalystState>).tactics
     delete (raw as Partial<AnalystState>).sync
     raw.players = [{ id:'p1',name:'Player',positions:['ST'],overall:71,potential:80,attributes:{},familiarity:{},injured:false,suspended:false,snapshots:[{capturedAt:'2025-08-10T10:00:00Z',overall:70}] }]
     const migrated=migrateState(raw)
-    expect(migrated.schemaVersion).toBe(3)
-    expect(migrated.matches).toHaveLength(1)
+    expect(migrated.schemaVersion).toBe(4)
+    expect(migrated.matches[0]).not.toHaveProperty('ocr')
+    expect(migrated.matches[0]).not.toHaveProperty('screenshots')
     expect(migrated.matches[0].seasonId).toBe('2025/26')
-    expect(migrated.matches[0].screenshots).toEqual([])
     expect(migrated.tactics).toEqual([])
     expect(migrated.players[0].snapshots[0]).toMatchObject({potential:80,careerDate:'2025-08-10'})
   })
@@ -31,21 +30,8 @@ describe('trend history', () => {
     expect(filteredMatches(state,'all','League').map(match=>match.id)).toEqual(['a','b'])
   })
 
-  it('keeps unconfirmed detailed values as chart gaps', () => {
-    const unconfirmed=fixture('one','2025-08-01');unconfirmed.teamStatistics.expectedGoals=1.8
-    const confirmed=fixture('two','2025-08-08');confirmed.teamStatistics.expectedGoals=2.1;confirmed.ocr.status='confirmed'
-    expect(matchSeries([unconfirmed,confirmed],'xg','xG',match=>teamMetric(match,'expectedGoals'),'Confirmed OCR').points.map(point=>point.value)).toEqual([undefined,2.1])
-    confirmed.opponentStatistics.expectedGoals=1.4
-    expect(teamMetric(confirmed,'expectedGoalDifference')).toBe(.7)
-  })
-
-  it('moves v2 xGA to the opponent side and produces factual briefings',()=>{
-    const state=initialTestState(),match=fixture('legacy','2025-08-01')
-    match.ocr.status='confirmed';match.teamStatistics={expectedGoals:1.2,expectedGoalsAgainst:1.8};match.teamScore=2;match.opponentScore=1
-    state.schemaVersion=2;state.matches=[match]
-    const migrated=migrateState(state)
-    expect(migrated.matches[0].teamStatistics.expectedGoalsAgainst).toBeUndefined()
-    expect(migrated.matches[0].opponentStatistics.expectedGoals).toBe(1.8)
-    expect(matchBriefing(migrated.matches[0])).toContain('Won despite a negative xG difference; the result was better than the chance balance.')
+  it('builds automatic scoring trends', () => {
+    const match=fixture('one','2025-08-01');match.teamScore=3;match.opponentScore=1
+    expect(matchSeries([match],'gd','Goal difference',item=>teamMetric(item,'goalDifference'),'Telemetry').points[0].value).toBe(2)
   })
 })

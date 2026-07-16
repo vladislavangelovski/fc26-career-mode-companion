@@ -19,7 +19,7 @@ describe('recommendation scoring', () => {
     expect(score.missingEvidence).toEqual(['recent match ratings'])
   })
   it('uses only the last five ratings for recent performance', () => {
-    const appearances=[8,7,6,5,4,3].map((rating,index)=>({id:String(index),matchId:String(index),playerId:'rated',minutes:90,rating,goals:20,assists:20,yellowCards:0,redCards:0,saves:0,goalsConceded:0,detailedMetrics:{passAccuracy:100}})) as Appearance[]
+    const appearances=[8,7,6,5,4,3].map((rating,index)=>({id:String(index),matchId:String(index),playerId:'rated',minutes:90,rating,goals:20,assists:20,yellowCards:0,redCards:0,saves:0,goalsConceded:0})) as Appearance[]
     const score=scorePlayer(player('rated'),ROLE_LIBRARY.find(role=>role.id==='playmaker')!,appearances)
     expect(score.performance).toBe(50)
     expect(score.sampleSize).toBe(5)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { playerDecision, positionAdjustedScore, ROLE_LIBRARY, scorePlayer, squadDepth, squadNeeds } from './shared/scoring'
-import type { AnalystState, Match, OCRValue, Player, RoleDefinition, RoleScore, Tactic, TacticSlot } from './shared/types'
-import { currentSeason, filteredMatches, matchBriefing, matchSeries, playerMetric, snapshotSeries, teamMetric, type TrendRange, type TrendSeries } from './shared/trends'
+import type { AnalystState, Match, Player, RoleDefinition, RoleScore, Tactic, TacticSlot } from './shared/types'
+import { currentSeason, filteredMatches, matchSeries, playerMetric, snapshotSeries, teamMetric, type TrendRange, type TrendSeries } from './shared/trends'
 import { roleFocuses } from './shared/telemetry'
 
 type View = 'Overview' | 'Performance' | 'Squad' | 'Tactics' | 'Opponent'
@@ -48,15 +48,9 @@ function Pitch({ tactic, state, selected, onSelect, assignments }: { tactic: Tac
 function Meter({ value }: { value: number }) { return <span className="meter"><i style={{ width: `${Math.max(0, Math.min(100, value))}%` }}/><b>{Number.isInteger(value)?value:value.toFixed(1)}</b></span> }
 function Empty({ children }: { children: string }) { return <div className="empty"><span>⌁</span>{children}</div> }
 
-const TEAM_PRESETS = {
-  attacking: [['goals', 'Goals', 'Telemetry'], ['expectedGoals', 'xG', 'Confirmed OCR']],
-  expected: [['expectedGoals','xG','Confirmed OCR'],['expectedGoalsAgainst','xGA','Confirmed OCR'],['expectedGoalDifference','xGD','Confirmed OCR']],
-  shooting: [['shots', 'Shots', 'Confirmed OCR'], ['shotsOnTarget', 'Shots on target', 'Confirmed OCR'],['shotAccuracy','Shot accuracy %','Confirmed OCR'],['expectedGoalsPerShot','xG per shot','Confirmed OCR']],
-  control: [['possession', 'Possession %', 'Confirmed OCR'], ['passAccuracy', 'Pass accuracy %', 'Confirmed OCR']],
-  defensive: [['tacklesWon', 'Tackles', 'Confirmed OCR'], ['interceptions', 'Interceptions', 'Confirmed OCR']],
-} as const
+const TEAM_METRICS = [['goals','Goals for'],['goalsConceded','Goals against'],['goalDifference','Goal difference']] as const
 const PLAYER_METRICS = [
-  ['rating','Rating','Telemetry'],['minutes','Minutes','Telemetry'],['goals','Goals','Telemetry'],['assists','Assists','Telemetry'],['expectedGoals','xG','Confirmed OCR'],['shots','Shots','Confirmed OCR'],['shotsOnTarget','Shots on target','Confirmed OCR'],['passes','Passes','Confirmed OCR'],['passAccuracy','Pass accuracy %','Confirmed OCR'],['tacklesWon','Tackles','Confirmed OCR'],['interceptions','Interceptions','Confirmed OCR'],['distanceCovered','Distance','Confirmed OCR'],['crossesCompleted','Crosses','Confirmed OCR'],['saves','Saves','Telemetry'],['goalsConceded','Goals conceded','Telemetry'],
+  ['rating','Rating'],['minutes','Minutes'],['goals','Goals'],['assists','Assists'],['saves','Saves'],['goalsConceded','Goals conceded'],
 ] as const
 const SNAPSHOT_METRICS = [['overall','OVR'],['potential','Potential'],['form','Form'],['fitness','Fitness'],['sharpness','Sharpness'],['morale','Morale']] as const
 const displayValue = (value?: number) => value === undefined ? '—' : Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
@@ -64,7 +58,7 @@ const displayValue = (value?: number) => value === undefined ? '—' : Number.is
 function TrendChart({ series, onPoint }: { series: TrendSeries[]; onPoint?: (matchId: string) => void }) {
   const [active, setActive] = useState<string>()
   const values = series.flatMap(item => item.points.flatMap(point => point.value === undefined ? [] : [point.value]))
-  if (!values.length) return <Empty>No values are available for this selection. Confirmed screenshot metrics remain blank until reviewed.</Empty>
+  if (!values.length) return <Empty>No telemetry values are available for this selection.</Empty>
   const width=1000,height=360,left=58,right=24,top=32,bottom=52
   const rawMin=Math.min(...values),rawMax=Math.max(...values),min=rawMin===rawMax?Math.max(0,rawMin-1):Math.min(0,rawMin),max=rawMin===rawMax?rawMax+1:rawMax
   const count=Math.max(...series.map(item=>item.points.length),1)
@@ -96,7 +90,6 @@ function Overview({ state, setView }: { state: AnalystState; setView: (view: Vie
   const recent = state.matches.slice(0, 5)
   const unavailable = state.career.teamId ? state.players.filter(p => p.injured || p.suspended) : []
   const supported=state.players.filter(player=>{const apps=playerApps(state,player.id);return apps.filter(app=>app.rating!==undefined).length>=5&&apps.reduce((sum,app)=>sum+app.minutes,0)>=300}).length
-  const last=recent[0]
   return <>
     <PageTitle eyebrow="Command centre" title={state.career.teamName} note={tactic ? `${currentSeason(state)} · ${tactic.formation}` : 'Waiting for squad and tactics exports'} />
     <div className="overview-grid">
@@ -108,7 +101,6 @@ function Overview({ state, setView }: { state: AnalystState; setView: (view: Vie
         <section><SectionTitle title="Squad evidence"/><Line left="Players meeting the 5-match / 300-minute gate" right={`${supported}/${state.players.length}`} tone={supported?'good':undefined}/></section>
       </aside>
     </div>
-    {last&&<section className="lower-band"><SectionTitle title="Latest evidence briefing" action="Open performance" onAction={()=>setView('Performance')}/><div className="briefing-list">{matchBriefing(last).map(note=><p key={note}>{note}</p>)}</div></section>}
     <section className="lower-band"><SectionTitle title="Recent matches" action="Open performance" onAction={() => setView('Performance')}/>{recent.length ? <MatchRows matches={recent}/> : <Empty>Automatic telemetry will begin the timeline after your next match.</Empty>}</section>
     <section className="lower-band"><SectionTitle title="Data coverage"/><SourceHealth state={state}/></section>
   </>
@@ -147,32 +139,24 @@ function PlayerInspector({ player, state }: { player: Player; state: AnalystStat
   </>
 }
 
-function Performance({state,onState,requestedId,openMatch}:{state:AnalystState;onState:(state:AnalystState)=>void;requestedId?:string;openMatch:(matchId:string)=>void}) {
+function Performance({state,requestedId,openMatch}:{state:AnalystState;requestedId?:string;openMatch:(matchId:string)=>void}) {
   const [tab,setTab]=useState<'matches'|'trends'>(requestedId?'matches':'trends')
   useEffect(()=>{if(requestedId)setTab('matches')},[requestedId])
-  return <><PageTitle eyebrow="Analysis" title="Performance" note={`${state.career.teamName} · ${currentSeason(state)}`}/><div className="workspace-tabs segmented"><button className={tab==='matches'?'active':''} onClick={()=>setTab('matches')}>Matches</button><button className={tab==='trends'?'active':''} onClick={()=>setTab('trends')}>Trends</button></div>{tab==='matches'?<Matches state={state} onState={onState} requestedId={requestedId} embedded/>:<Trends state={state} openMatch={openMatch} embedded/>}</>
+  return <><PageTitle eyebrow="Analysis" title="Performance" note={`${state.career.teamName} · ${currentSeason(state)}`}/><div className="workspace-tabs segmented"><button className={tab==='matches'?'active':''} onClick={()=>setTab('matches')}>Matches</button><button className={tab==='trends'?'active':''} onClick={()=>setTab('trends')}>Trends</button></div>{tab==='matches'?<Matches state={state} requestedId={requestedId} embedded/>:<Trends state={state} openMatch={openMatch} embedded/>}</>
 }
 
-function Matches({ state, onState, requestedId,embedded=false }: { state: AnalystState; onState: (state: AnalystState) => void; requestedId?: string;embedded?:boolean }) {
+function Matches({ state, requestedId,embedded=false }: { state: AnalystState; requestedId?: string;embedded?:boolean }) {
   const [selectedId, setSelected] = useState(requestedId??state.matches[0]?.id)
   useEffect(()=>{if(requestedId)setSelected(requestedId)},[requestedId])
   const selected = state.matches.find(m => m.id === selectedId) ?? state.matches[0]
-  const [review, setReview] = useState<OCRValue[]>(selected?.ocr.values ?? [])
-  useEffect(() => setReview(selected?.ocr.values ?? []), [selected?.id, selected?.ocr.values])
-  const importImages = async () => { if (!selected) return; await window.fc26.importScreenshots(selected.id) }
-  const confirm = async () => { if (selected) onState(await window.fc26.confirmOCR(selected.id, review)) }
-  const comparisons=selected?[['expectedGoals','xG'],['shots','Shots'],['shotsOnTarget','On target'],['possession','Possession %'],['passAccuracy','Pass accuracy %'],['tacklesWon','Tackles'],['interceptions','Interceptions']].filter(([field])=>selected.teamStatistics[field]!==undefined||selected.opponentStatistics[field]!==undefined):[]
   return <>
     {!embedded&&<PageTitle eyebrow="Match room" title="Performance archive" note={`${state.matches.length} fixtures preserved`} />}
     <div className="match-workspace">
       <aside className="match-list">{state.matches.map(match => <button key={match.id} className={selected?.id === match.id ? 'active' : ''} onClick={() => setSelected(match.id)}><time>{date(match.date)}</time><span><b>{match.opponent}</b><small>{match.competition}</small></span><strong>{match.teamScore ?? '–'} : {match.opponentScore ?? '–'}</strong><em className={result(match)}>{result(match)}</em></button>)}</aside>
       <section className="match-detail">{selected ? <>
         <div className="scoreline"><div><p>{selected.venue || 'fixture'}</p><h2>{state.career.teamName}</h2></div><strong>{selected.teamScore ?? '–'}<i>:</i>{selected.opponentScore ?? '–'}</strong><div><p>{selected.competition}</p><h2>{selected.opponent}</h2></div></div>
-        <div className="match-actions"><span className={`status ${selected.ocr.status}`}>{selected.captureLevel === 'telemetry' ? 'TELEMETRY ONLY' : `OCR ${selected.ocr.status.toUpperCase()}`}</span><button className="primary" onClick={importImages}>Add screenshot batch</button></div>
-        <section className="match-brief"><div><SectionTitle title="Evidence briefing"/><div className="briefing-list">{matchBriefing(selected).map(note=><p key={note}>{note}</p>)}</div></div><div><SectionTitle title="Team comparison"/>{comparisons.length?<div className="comparison-grid">{comparisons.map(([field,label])=><div key={field}><strong>{displayValue(selected.teamStatistics[field])}</strong><span>{label}</span><strong>{displayValue(selected.opponentStatistics[field])}</strong></div>)}</div>:<p className="muted">Detailed team comparisons appear after screenshot review.</p>}</div></section>
         <SectionTitle title="Appearances" count={selected.appearances.length}/>
-        <table><thead><tr><th>Player</th><th>Min</th><th>Pos</th><th>Rating</th><th>G</th><th>A</th><th>Evidence</th></tr></thead><tbody>{selected.appearances.map(a => <tr key={a.id}><td><strong>{state.players.find(p => p.id === a.playerId)?.name || a.playerId}</strong></td><td>{a.minutes||'—'}</td><td>{a.position || '—'}</td><td className="metric">{a.rating ?? '—'}</td><td>{a.goals}</td><td>{a.assists}</td><td>{Object.keys(a.detailedMetrics).length ? 'Detailed' : 'Basic'}</td></tr>)}</tbody></table>
-        {selected.ocr.status === 'review' && <section className="ocr-review"><SectionTitle title="OCR review" count={review.length}/><p className="muted">Nothing below affects analysis until you confirm it. Values under 90% are flagged; unmatched player pages remain disabled.</p><table><thead><tr><th>Use</th><th>Source</th><th>Field</th><th>Value</th><th>Confidence</th></tr></thead><tbody>{review.map((value,index) => <tr key={value.id} className={value.confidence < 90 || value.unmatchedPlayer ? 'low-confidence' : ''}><td><input type="checkbox" disabled={value.unmatchedPlayer} checked={value.included} onChange={e => setReview(review.map((v,i) => i === index ? {...v,included:e.target.checked}:v))}/></td><td>{value.unmatchedPlayer ? 'Unmatched player' : state.players.find(p => p.id === value.playerId)?.name || (value.scope==='opponent'?selected.opponent:state.career.teamName)}</td><td>{value.field}</td><td><input value={value.value} onChange={e => setReview(review.map((v,i) => i === index ? {...v,value:e.target.value}:v))}/></td><td>{value.confidence}%</td></tr>)}</tbody></table><button className="primary confirm" onClick={confirm}>Confirm reviewed values</button></section>}
+        <table><thead><tr><th>Player</th><th>Min</th><th>Pos</th><th>Rating</th><th>G</th><th>A</th></tr></thead><tbody>{selected.appearances.map(a => <tr key={a.id}><td><strong>{state.players.find(p => p.id === a.playerId)?.name || a.playerId}</strong></td><td>{a.minutes||'—'}</td><td>{a.position || '—'}</td><td className="metric">{a.rating ?? '—'}</td><td>{a.goals}</td><td>{a.assists}</td></tr>)}</tbody></table>
       </> : <Empty>A played or simulated match will appear after telemetry import.</Empty>}</section>
     </div>
   </>
@@ -183,7 +167,6 @@ function Trends({ state, openMatch,embedded=false }: { state: AnalystState; open
   const [range,setRange]=useState<TrendRange>(10)
   const [competition,setCompetition]=useState('All')
   const [formation,setFormation]=useState('All')
-  const [preset,setPreset]=useState<keyof typeof TEAM_PRESETS>('attacking')
   const season=currentSeason(state)
   const seasonMatches=filteredMatches(state,'all')
   const minuteLeader=state.players.map(player=>({player,minutes:seasonMatches.flatMap(match=>match.appearances).filter(app=>app.playerId===player.id).reduce((sum,app)=>sum+app.minutes,0)})).sort((a,b)=>b.minutes-a.minutes)[0]?.player
@@ -200,11 +183,11 @@ function Trends({ state, openMatch,embedded=false }: { state: AnalystState; open
   const availableSnapshots=SNAPSHOT_METRICS.filter(([field])=>player?.snapshots.some(snapshot=>typeof snapshot[field]==='number'))
   const available=[...availableMatchMetrics,...availableSnapshots]
   useEffect(()=>{if(scope==='player'&&!available.some(([field])=>field===metric))setMetric(available[0]?.[0]??'rating')},[scope,playerId,competition,formation,state.matches.length])
-  const teamSeries:TrendSeries[]=TEAM_PRESETS[preset].map(([field,label,source])=>matchSeries(matches,field,label,match=>teamMetric(match,field),source))
+  const teamSeries:TrendSeries[]=TEAM_METRICS.map(([field,label])=>matchSeries(matches,field,label,match=>teamMetric(match,field),'Telemetry'))
   const playerDefinition=available.find(([field])=>field===metric)
   const playerSeries=player&&playerDefinition ? (SNAPSHOT_METRICS.some(([field])=>field===metric)
     ? [snapshotSeries(player.snapshots,metric as keyof typeof player.snapshots[number],playerDefinition[1],range,season)]
-    : [matchSeries(matches,metric,playerDefinition[1],match=>{const app=match.appearances.find(item=>item.playerId===player.id);return app?playerMetric(match,app,metric):undefined},playerDefinition[2] as 'Telemetry'|'Confirmed OCR')]) : []
+    : [matchSeries(matches,metric,playerDefinition[1],match=>{const app=match.appearances.find(item=>item.playerId===player.id);return app?playerMetric(match,app,metric):undefined},'Telemetry')]) : []
   const competitions=[...new Set(seasonMatches.map(match=>match.competition).filter(Boolean))].sort()
   const formations=[...new Set(seasonMatches.map(match=>match.formation).filter(Boolean))].sort() as string[]
   return <>{!embedded&&<PageTitle eyebrow="Analysis" title="Current-season trends" note={`${state.career.teamName} · ${season}`} />}
@@ -214,8 +197,8 @@ function Trends({ state, openMatch,embedded=false }: { state: AnalystState; open
         <div className="segmented" aria-label="Match range">{([[5,'Last 5'],[10,'Last 10'],['all','All']] as const).map(([value,label])=><button key={value} className={range===value?'active':''} onClick={()=>setRange(value)}>{label}</button>)}</div>
         <label>Competition<select value={competition} onChange={event=>setCompetition(event.target.value)}><option>All</option>{competitions.map(value=><option key={value}>{value}</option>)}</select></label><label>Formation<select value={formation} onChange={event=>setFormation(event.target.value)}><option>All</option>{formations.map(value=><option key={value}>{value}</option>)}</select></label>
       </div>
-      <div className="trend-selects">{scope==='team'?<><span>Team view</span>{(Object.keys(TEAM_PRESETS) as (keyof typeof TEAM_PRESETS)[]).map(value=><button key={value} className={preset===value?'active':''} onClick={()=>setPreset(value)}>{value}</button>)}</>:<><label>Player<select value={player?.id??''} onChange={event=>setPlayerId(event.target.value)}>{state.players.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Metric<select value={metric} onChange={event=>setMetric(event.target.value)}>{available.map(([field,label])=><option key={field} value={field}>{label}</option>)}</select></label></>}</div>
-      <p className="trend-note">{scope==='team'?`${TEAM_PRESETS[preset].map(([,label])=>label).join(' and ')} across ${matches.length} current-season matches.`:`${player?.name??'No player'} · metrics with no source values are hidden.`} Click or press Enter on a match point to open it.</p>
+      <div className="trend-selects">{scope==='team'?<span>Automatic match telemetry</span>:<><label>Player<select value={player?.id??''} onChange={event=>setPlayerId(event.target.value)}>{state.players.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Metric<select value={metric} onChange={event=>setMetric(event.target.value)}>{available.map(([field,label])=><option key={field} value={field}>{label}</option>)}</select></label></>}</div>
+      <p className="trend-note">{scope==='team'?`Goals for, goals against and goal difference across ${matches.length} current-season matches.`:`${player?.name??'No player'} · metrics with no source values are hidden.`} Click or press Enter on a match point to open it.</p>
       <TrendChart series={scope==='team'?teamSeries:playerSeries} onPoint={openMatch}/>
     </section>
   </>
@@ -232,7 +215,7 @@ function TacticsEditor({ state, onState, tactic }: { state: AnalystState; onStat
   const [selectedId, setSelected] = useState(draft.slots[0]?.id)
   const slot = draft.slots.find(item => item.id === selectedId)
   const formationMatches=state.matches.filter(match=>match.seasonId===currentSeason(state)&&match.formation===draft.formation)
-  const formationXgd=formationMatches.map(match=>teamMetric(match,'expectedGoalDifference')).filter((value):value is number=>value!==undefined)
+  const formationGoalDifference=formationMatches.map(match=>teamMetric(match,'goalDifference')).filter((value):value is number=>value!==undefined)
   const updateSlot = (change: Partial<TacticSlot>) => setDraft({...draft, slots: draft.slots.map(item => item.id === selectedId ? {...item,...change}:item)})
   const save = async () => onState(await window.fc26.updateTactic({...draft,corrected:true,slots:draft.slots.map(item=>({...item,focus:roleFocuses(item.position,item.role).includes(item.focus)?item.focus:roleFocuses(item.position,item.role)[0]}))}))
   return <><PageTitle eyebrow="Game model" title="Tactical laboratory" note={`${draft.formation} · edits are analyst scenarios only`} />
@@ -244,7 +227,7 @@ function TacticsEditor({ state, onState, tactic }: { state: AnalystState; onStat
         <label>Focus<select value={roleFocuses(slot.position,slot.role).includes(slot.focus)?slot.focus:roleFocuses(slot.position,slot.role)[0]} onChange={e => updateSlot({focus:e.target.value})}>{roleFocuses(slot.position,slot.role).map(f => <option key={f}>{f}</option>)}</select></label>
         <SectionTitle title="Role candidates"/>{state.players.map(player => {const role=roleFor(slot),apps=playerApps(state,player.id),supported=apps.filter(app=>app.rating!==undefined).length>=5&&apps.reduce((sum,app)=>sum+app.minutes,0)>=300;return {player,supported,score:role?positionAdjustedScore(player,slot.position,scorePlayer(player,role,apps)[supported?'total':'attributes']):Number.NEGATIVE_INFINITY}}).filter(item=>Number.isFinite(item.score)).sort((a,b)=>b.score-a.score).slice(0,5).map(({player,score,supported},index)=><Line key={player.id} left={`${index+1}. ${player.name}${supported?'':' · attributes only'}`} right={`${Math.round(score)}`}/>)}</>}
         <button className="primary save-tactic" onClick={save}>Save analyst scenario</button>
-      </aside></div><section className="lower-band"><SectionTitle title="Formation evidence" count={formationMatches.length}/>{formationMatches.length?<><Line left="Current-season record" right={`${formationMatches.filter(match=>result(match)==='W').length}W · ${formationMatches.filter(match=>result(match)==='D').length}D · ${formationMatches.filter(match=>result(match)==='L').length}L`}/><Line left="Average confirmed xGD" right={formationXgd.length?displayValue(formationXgd.reduce((sum,value)=>sum+value,0)/formationXgd.length):'Not exposed'}/></>:<Line left="No imported match is linked to this formation yet" right="Waiting"/>}</section></>
+      </aside></div><section className="lower-band"><SectionTitle title="Formation evidence" count={formationMatches.length}/>{formationMatches.length?<><Line left="Current-season record" right={`${formationMatches.filter(match=>result(match)==='W').length}W · ${formationMatches.filter(match=>result(match)==='D').length}D · ${formationMatches.filter(match=>result(match)==='L').length}L`}/><Line left="Average goal difference" right={formationGoalDifference.length?displayValue(formationGoalDifference.reduce((sum,value)=>sum+value,0)/formationGoalDifference.length):'Not exposed'}/></>:<Line left="No imported match is linked to this formation yet" right="Waiting"/>}</section></>
 }
 
 function SquadDecisions({state}:{state:AnalystState}) {
@@ -315,7 +298,7 @@ function PageTitle({ eyebrow,title,note }: { eyebrow:string;title:string;note:st
 function SectionTitle({ title,count,action,onAction }: { title:string;count?:number;action?:string;onAction?:()=>void }) { return <div className="section-title"><h3>{title}{count !== undefined && <sup>{count}</sup>}</h3>{action && <button onClick={onAction}>{action} →</button>}</div> }
 function Line({ left,right,tone }: { left:string;right:string;tone?:string }) { return <div className={`line ${tone||''}`}><span>{left}</span><strong>{right}</strong></div> }
 function DataGrid({values}:{values:[string,unknown][]}) { return <div className="data-grid">{values.map(([label,value])=><div key={label}><span>{label}</span><strong>{value === undefined ? 'Not exposed' : String(value)}</strong></div>)}</div> }
-function MatchRows({matches}:{matches:Match[]}) { return <div className="match-rows">{matches.map(match=><div key={match.id}><time>{date(match.date)}</time><strong className={result(match)}>{result(match)}</strong><span>{match.opponent}</span><b>{match.teamScore ?? '–'} : {match.opponentScore ?? '–'}</b><small>{match.captureLevel === 'played' ? 'DETAILED' : 'TELEMETRY'}</small></div>)}</div> }
+function MatchRows({matches}:{matches:Match[]}) { return <div className="match-rows">{matches.map(match=><div key={match.id}><time>{date(match.date)}</time><strong className={result(match)}>{result(match)}</strong><span>{match.opponent}</span><b>{match.teamScore ?? '–'} : {match.opponentScore ?? '–'}</b></div>)}</div> }
 
 function Settings({ state, close, onState }: { state:AnalystState;close:()=>void;onState:(s:AnalystState)=>void }) {
   const [settings,setSettings]=useState(state.settings)
@@ -332,6 +315,6 @@ export default function App() {
   useEffect(()=>{void window.fc26.getState().then(setState);return window.fc26.onStateChanged(setState)},[])
   if(!state) return <div className="boot"><i/>Loading career intelligence…</div>
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span>FC</span><div><b>CAREER</b><small>ANALYST / 26</small></div></div><nav>{views.map(item=><button key={item.name} className={view===item.name?'active':''} onClick={()=>setView(item.name)}><span>{item.key}</span>{item.name}</button>)}</nav><div className="side-footer"><div className={`sync-dot ${state.sync.status}`}/><span><b>{state.sync.status}</b><small>{state.sync.message}</small></span><button title="Settings" onClick={()=>setSettings(true)}>⚙</button></div></aside>
-    <main>{view==='Overview'&&<Overview state={state} setView={setView}/>} {view==='Performance'&&<Performance state={state} onState={setState} requestedId={selectedMatchId} openMatch={openMatch}/>} {view==='Squad'&&<Squad state={state}/>} {view==='Tactics'&&<Tactics state={state} onState={setState}/>} {view==='Opponent'&&<Opponent state={state}/>}</main>
+    <main>{view==='Overview'&&<Overview state={state} setView={setView}/>} {view==='Performance'&&<Performance state={state} requestedId={selectedMatchId} openMatch={openMatch}/>} {view==='Squad'&&<Squad state={state}/>} {view==='Tactics'&&<Tactics state={state} onState={setState}/>} {view==='Opponent'&&<Opponent state={state}/>}</main>
     {settings&&<Settings state={state} close={()=>setSettings(false)} onState={setState}/>}</div>
 }
