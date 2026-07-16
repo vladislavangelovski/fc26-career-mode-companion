@@ -34,7 +34,7 @@ jobs:
 
       - run: npm ci
       - run: npm test
-      - run: npm run package
+      - run: npm run package -- --publish never
 
       - name: Publish installer
         shell: pwsh
