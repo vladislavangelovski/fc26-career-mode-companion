@@ -1,0 +1,55 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+      title:
+        description: Release title
+        required: true
+        type: string
+      notes:
+        description: Release notes (Markdown)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run package
+
+      - name: Publish installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TITLE: ${{ inputs.title }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          $installer = Get-ChildItem release -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Installer was not produced.' }
+
+          if (gh release view $env:RELEASE_TAG 2>$null) {
+            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes $env:RELEASE_NOTES --latest
+            gh release upload $env:RELEASE_TAG $installer.FullName --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $installer.FullName --title $env:RELEASE_TITLE --notes $env:RELEASE_NOTES --latest --verify-tag
+          }
